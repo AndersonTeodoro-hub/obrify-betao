@@ -1,0 +1,10 @@
+# Dependências e artefactos de construção do frontend (app/)
+node_modules/
+dist/
+
+# Configuração local com a URL e a chave anónima do projeto Supabase.
+# A chave anónima é pública por natureza — vai no cliente — mas a URL e o
+# projeto a que aponta são de cada máquina, e a chave de service_role NUNCA
+# entra aqui nem em ficheiro nenhum do repositório.
+.env.local
+.env.*.local

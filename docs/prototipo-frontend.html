@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plataforma de Betonagens — protótipo de interface</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --betao:#E9E7E2; --papel:#FFFFFF; --betao-fundo:#DAD7D0;
+  --tinta:#16191A; --tinta-2:#5A615F; --tinta-3:#8A908E;
+  --linha:#CFCBC3; --linha-forte:#A9A49A;
+  --ddn:#0E7A3C; --ddn-esc:#0A5C2D; --ddn-claro:#E4F1E9;
+  --hivis:#F0A800; --hivis-claro:#FFF3D6;
+  --ferro:#AF3720; --ferro-claro:#FBE7E2;
+  --marcacao:#1F4FD8; --marcacao-claro:#E6ECFD;
+  --r:3px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-text-size-adjust:100%}
+body{
+  background:var(--betao-fundo);
+  color:var(--tinta);
+  font-family:'Archivo',system-ui,sans-serif;
+  font-size:15px; line-height:1.45;
+  padding:0 0 80px;
+}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.stencil{
+  font-family:'IBM Plex Mono',monospace; font-size:10px; font-weight:600;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--tinta-2);
+}
+
+/* ── barra superior do protótipo ───────────────────────── */
+.topo{
+  background:var(--tinta); color:var(--betao);
+  padding:18px 24px 0; position:sticky; top:0; z-index:50;
+  border-bottom:1px solid #2C3130;
+}
+.topo-linha{display:flex;flex-wrap:wrap;align-items:baseline;gap:14px;max-width:1240px;margin:0 auto}
+.topo h1{font-size:15px;font-weight:700;letter-spacing:-.01em}
+.topo .sub{font-size:12px;color:#9BA3A1}
+.abas{display:flex;gap:2px;max-width:1240px;margin:14px auto 0;flex-wrap:wrap}
+.aba{
+  background:none;border:0;border-bottom:3px solid transparent;
+  color:#9BA3A1; font-family:'IBM Plex Mono',monospace; font-size:11px; font-weight:600;
+  letter-spacing:.1em; text-transform:uppercase; padding:10px 14px; cursor:pointer;
+}
+.aba:hover{color:var(--betao)}
+.aba[aria-selected="true"]{color:#fff;border-bottom-color:var(--hivis)}
+.aba:focus-visible{outline:2px solid var(--hivis);outline-offset:-2px}
+
+/* ── contentor de vistas ───────────────────────────────── */
+.vista{display:none;max-width:1240px;margin:0 auto;padding:28px 24px}
+.vista.on{display:block}
+.nota{
+  max-width:660px;margin:0 0 26px;font-size:13.5px;color:var(--tinta-2);line-height:1.6;
+  border-left:2px solid var(--linha-forte);padding-left:14px;
+}
+.nota b{color:var(--tinta);font-weight:600}
+
+/* ── moldura de telemóvel ──────────────────────────────── */
+.ecras{display:flex;gap:26px;flex-wrap:wrap;align-items:flex-start}
+.tel-bloco{width:330px}
+.tel-legenda{margin-bottom:9px}
+.tel-legenda .n{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;color:var(--tinta)}
+.tel-legenda .d{font-size:12.5px;color:var(--tinta-2);line-height:1.4;margin-top:2px}
+.tel{
+  width:330px;height:672px;background:var(--tinta);border-radius:26px;padding:9px;
+  box-shadow:0 10px 30px rgba(0,0,0,.22);
+}
+.tel-in{
+  width:100%;height:100%;background:var(--betao);border-radius:19px;overflow:hidden;
+  display:flex;flex-direction:column;position:relative;
+}
+.tel-scroll{flex:1;overflow-y:auto;overflow-x:hidden}
+.tel-scroll::-webkit-scrollbar{width:0}
+
+/* ── barra de app ──────────────────────────────────────── */
+.app-topo{background:var(--tinta);color:#fff;padding:9px 14px 11px;flex-shrink:0}
+.app-topo .l1{display:flex;justify-content:space-between;align-items:center}
+.app-topo .obra{font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:600;letter-spacing:.08em}
+.app-topo .nome{font-size:13px;font-weight:600;margin-top:1px}
+.sinc{
+  font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:.06em;
+  padding:3px 7px;border-radius:2px;
+}
+.sinc.pend{background:var(--hivis);color:#2A1F00}
+.sinc.ok{background:#24312C;color:#7FD4A4}
+
+/* ── conteúdo ──────────────────────────────────────────── */
+.corpo{padding:13px 13px 22px}
+.bloco{background:var(--papel);border:1px solid var(--linha);border-radius:var(--r);margin-bottom:11px}
+.bloco-t{padding:9px 12px 8px;border-bottom:1px solid var(--linha);display:flex;justify-content:space-between;align-items:center;gap:8px}
+.bloco-c{padding:12px}
+
+/* ── cofragem: acumulador de volume (elemento assinatura) ─ */
+.molde{margin:2px 0 0}
+.molde-topo{display:flex;justify-content:space-between;align-items:flex-end;margin-bottom:7px}
+.molde-val{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:30px;line-height:1;letter-spacing:-.02em}
+.molde-val .un{font-size:13px;font-weight:500;color:var(--tinta-2);margin-left:3px}
+.molde-alvo{font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--tinta-2);text-align:right;line-height:1.35}
+.molde-caixa{
+  position:relative;height:38px;background:var(--betao);
+  border:1.5px solid var(--tinta);border-radius:1px;overflow:hidden;
+}
+.molde-tol{position:absolute;top:0;bottom:0;background:repeating-linear-gradient(45deg,var(--ferro-claro) 0 5px,transparent 5px 10px);border-left:1px dashed var(--ferro)}
+.molde-cheio{
+  position:absolute;top:0;bottom:0;left:0;
+  background:linear-gradient(175deg,#8E948F 0%,#767C77 45%,#646A66 100%);
+  border-right:2px solid #4A4F4C;
+  transition:width .9s cubic-bezier(.22,.61,.36,1);
+}
+.molde-cheio::after{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(circle at 20% 30%,rgba(255,255,255,.13) 0 2px,transparent 2px),
+             radial-gradient(circle at 62% 70%,rgba(255,255,255,.1) 0 2.5px,transparent 2.5px),
+             radial-gradient(circle at 84% 25%,rgba(0,0,0,.12) 0 2px,transparent 2px);
+  background-size:26px 26px,34px 34px,30px 30px;
+}
+.molde-cheio.excede{background:linear-gradient(175deg,#A85B45 0%,#8E4531 100%)}
+.molde-prev{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--tinta)}
+.molde-prev span{
+  position:absolute;top:-14px;left:50%;transform:translateX(-50%);
+  font-family:'IBM Plex Mono',monospace;font-size:8.5px;font-weight:700;letter-spacing:.05em;white-space:nowrap;color:var(--tinta);
+}
+.molde-esc{display:flex;justify-content:space-between;margin-top:5px}
+.molde-esc span{font-family:'IBM Plex Mono',monospace;font-size:9px;color:var(--tinta-3)}
+
+/* ── botões ────────────────────────────────────────────── */
+.btn{
+  display:block;width:100%;border:0;border-radius:var(--r);cursor:pointer;
+  font-family:'Archivo',sans-serif;font-size:16px;font-weight:700;letter-spacing:.01em;
+  padding:17px 16px;text-align:center;
+}
+.btn-p{background:var(--ddn);color:#fff}
+.btn-p:hover{background:var(--ddn-esc)}
+.btn-s{background:var(--papel);color:var(--tinta);border:1.5px solid var(--linha-forte);font-size:14px;padding:13px}
+.btn-s:hover{border-color:var(--tinta)}
+.btn[disabled]{background:var(--linha);color:var(--tinta-3);cursor:not-allowed}
+.btn:focus-visible{outline:3px solid var(--marcacao);outline-offset:2px}
+.btn-nota{font-size:11.5px;color:var(--tinta-2);text-align:center;margin-top:6px;line-height:1.35}
+
+/* ── avisos ────────────────────────────────────────────── */
+.aviso{border-radius:var(--r);padding:11px 12px;margin-bottom:11px;display:flex;gap:10px;align-items:flex-start}
+.aviso .ic{font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:14px;line-height:1.2;flex-shrink:0}
+.aviso .tt{font-size:13.5px;font-weight:700;line-height:1.3}
+.aviso .tx{font-size:12.5px;line-height:1.45;margin-top:2px}
+.av-hivis{background:var(--hivis-claro);border-left:4px solid var(--hivis)}
+.av-hivis .ic{color:#8A6100}
+.av-ferro{background:var(--ferro-claro);border-left:4px solid var(--ferro)}
+.av-ferro .ic{color:var(--ferro)}
+.av-ddn{background:var(--ddn-claro);border-left:4px solid var(--ddn)}
+.av-ddn .ic{color:var(--ddn-esc)}
+
+/* ── proveniência dos dados (assinatura funcional) ─────── */
+.campo{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:8px 0;border-bottom:1px solid #EDEBE7}
+.campo:last-child{border-bottom:0}
+.campo .et{font-size:12.5px;color:var(--tinta-2);flex-shrink:0}
+.campo .vl{font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:600;text-align:right}
+.dec{color:var(--marcacao)}                 /* declarado por pessoa */
+.calc{color:var(--tinta)}                   /* calculado pelo sistema */
+.conf{color:var(--ddn-esc)}                 /* confirmado pela central */
+.mau{color:var(--ferro)}
+.origem{
+  font-family:'IBM Plex Mono',monospace;font-size:8.5px;font-weight:600;letter-spacing:.06em;
+  text-transform:uppercase;padding:1.5px 4px;border-radius:2px;margin-left:6px;vertical-align:2px;
+}
+.o-dec{background:var(--marcacao-claro);color:var(--marcacao)}
+.o-calc{background:#EAE8E3;color:var(--tinta-2)}
+.o-conf{background:var(--ddn-claro);color:var(--ddn-esc)}
+
+/* ── lista de PAB ──────────────────────────────────────── */
+.pab{display:flex;gap:11px;align-items:center;padding:11px 12px;border-bottom:1px solid var(--linha);cursor:pointer;background:var(--papel)}
+.pab:last-child{border-bottom:0}
+.pab:hover{background:#FAF9F7}
+.pab-n{
+  font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:15px;
+  background:var(--tinta);color:#fff;padding:6px 8px;border-radius:2px;flex-shrink:0;line-height:1;
+}
+.pab-n small{display:block;font-size:8px;font-weight:500;letter-spacing:.1em;opacity:.65;margin-bottom:2px}
+.pab-i{flex:1;min-width:0}
+.pab-i .el{font-size:13.5px;font-weight:600;line-height:1.25}
+.pab-i .lo{font-size:11.5px;color:var(--tinta-2);margin-top:2px}
+.pab-i .gp{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ddn-esc);margin-top:3px;font-weight:600}
+
+/* ── foto da guia ──────────────────────────────────────── */
+.guia-foto{
+  height:104px;border-radius:2px;position:relative;overflow:hidden;flex-shrink:0;width:78px;
+  background:linear-gradient(160deg,#FBF3D4 0%,#F3E7B8 100%);border:1px solid #D9C98A;
+}
+.guia-foto::before{
+  content:'';position:absolute;inset:9px 7px;
+  background:repeating-linear-gradient(180deg,#C9B677 0 1px,transparent 1px 8px);opacity:.75;
+}
+.guia-foto::after{
+  content:'GUIA';position:absolute;top:5px;left:0;right:0;text-align:center;
+  font-family:'IBM Plex Mono',monospace;font-size:7px;font-weight:700;letter-spacing:.15em;color:#8A7530;
+}
+
+/* ── linhas de guia ────────────────────────────────────── */
+.gr{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid #EDEBE7}
+.gr:last-child{border-bottom:0}
+.gr-h{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--tinta-2);width:38px;flex-shrink:0}
+.gr-n{font-family:'IBM Plex Mono',monospace;font-size:12.5px;font-weight:600;flex:1}
+.gr-v{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700}
+.gr-t{font-family:'IBM Plex Mono',monospace;font-size:10.5px;width:52px;text-align:right;flex-shrink:0}
+.gr.alerta{background:var(--ferro-claro)}
+.gr.alerta .gr-t{color:var(--ferro);font-weight:700}
+
+/* ── checklist ─────────────────────────────────────────── */
+.sec{border:1px solid var(--linha);border-radius:var(--r);margin-bottom:9px;background:var(--papel);overflow:hidden}
+.sec-t{display:flex;align-items:center;gap:9px;padding:10px 12px;background:#F4F2EE;border-bottom:1px solid var(--linha)}
+.sec-t .tt{font-size:13.5px;font-weight:700;flex:1}
+.sec-t .ct{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--tinta-2)}
+.sec-t .pt{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.pt-ok{background:var(--ddn)} .pt-pend{background:var(--hivis)} .pt-nc{background:var(--ferro)}
+.crit{display:flex;align-items:center;gap:9px;padding:9px 12px;border-bottom:1px solid #EDEBE7}
+.crit:last-child{border-bottom:0}
+.crit .tx{flex:1;font-size:12.5px;line-height:1.35}
+.tri{display:flex;gap:0;flex-shrink:0;border:1.5px solid var(--linha-forte);border-radius:2px;overflow:hidden}
+.tri button{
+  width:34px;height:34px;border:0;background:var(--papel);cursor:pointer;
+  font-family:'IBM Plex Mono',monospace;font-size:15px;font-weight:700;color:var(--tinta-3);
+  border-right:1px solid var(--linha);
+}
+.tri button:last-child{border-right:0}
+.tri button:hover{background:#F1EFEB}
+.tri button.on-c{background:var(--ddn);color:#fff}
+.tri button.on-x{background:var(--ferro);color:#fff}
+.tri button.on-n{background:var(--tinta-2);color:#fff}
+.tri button:focus-visible{outline:2px solid var(--marcacao);outline-offset:-2px}
+.assin{padding:8px 12px;background:#F9F8F5;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--tinta-2);border-top:1px solid var(--linha)}
+
+/* ── desktop: fila de exceções ─────────────────────────── */
+.painel{display:grid;grid-template-columns:334px 1fr;gap:0;border:1px solid var(--linha);border-radius:var(--r);background:var(--papel);overflow:hidden;min-height:600px}
+.fila{border-right:1px solid var(--linha);background:#F7F6F3;display:flex;flex-direction:column}
+.fila-t{padding:13px 15px;border-bottom:1px solid var(--linha);background:var(--papel)}
+.fila-t h3{font-size:14.5px;font-weight:700}
+.fila-t p{font-size:11.5px;color:var(--tinta-2);margin-top:2px}
+.fi{display:flex;gap:11px;padding:12px 15px;border-bottom:1px solid var(--linha);cursor:pointer;background:none;border-left:3px solid transparent;width:100%;text-align:left;font-family:inherit}
+.fi:hover{background:#F1EFEB}
+.fi.sel{background:var(--papel);border-left-color:var(--tinta)}
+.fi-r{
+  font-family:'IBM Plex Mono',monospace;font-weight:700;font-size:15px;width:34px;height:34px;
+  display:flex;align-items:center;justify-content:center;border-radius:2px;flex-shrink:0;color:#fff;
+}
+.r-alto{background:var(--ferro)} .r-med{background:var(--hivis);color:#3A2900} .r-baixo{background:var(--tinta-2)}
+.fi-i{flex:1;min-width:0}
+.fi-i .t1{font-size:13px;font-weight:600;line-height:1.25}
+.fi-i .t2{font-size:11.5px;color:var(--tinta-2);margin-top:2px}
+.fi-i .t3{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ferro);font-weight:600;margin-top:3px;text-transform:uppercase;letter-spacing:.05em}
+.det{padding:20px 22px}
+.det-h{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;padding-bottom:15px;border-bottom:1px solid var(--linha);margin-bottom:17px}
+.det-h h2{font-size:19px;font-weight:700;letter-spacing:-.01em}
+.det-h .s{font-size:13px;color:var(--tinta-2);margin-top:3px}
+.cmp{display:grid;grid-template-columns:200px 1fr 1fr;gap:0;border:1px solid var(--linha);border-radius:var(--r);overflow:hidden;margin-bottom:17px}
+.cmp>div{padding:9px 13px;border-bottom:1px solid #EDEBE7;font-size:13px}
+.cmp>div:nth-child(3n+1){background:#F7F6F3;font-weight:600;font-size:12.5px}
+.cmp .hd{background:var(--tinta)!important;color:#fff;font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.1em;text-transform:uppercase}
+.cmp .div{background:var(--ferro-claro)!important}
+.acoes{display:flex;gap:9px;flex-wrap:wrap}
+.acoes .btn{width:auto;padding:12px 22px;font-size:14px}
+.foto-g{width:170px;height:226px;flex-shrink:0}
+
+/* ── legenda de proveniência ───────────────────────────── */
+.leg{display:flex;gap:18px;flex-wrap:wrap;padding:12px 15px;background:var(--papel);border:1px solid var(--linha);border-radius:var(--r);margin-bottom:22px}
+.leg div{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--tinta-2)}
+.leg .sw{width:13px;height:13px;border-radius:2px;flex-shrink:0}
+
+.rodape{max-width:1240px;margin:34px auto 0;padding:20px 24px 0;border-top:1px solid var(--linha-forte);font-size:12.5px;color:var(--tinta-2);line-height:1.6}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+@media(max-width:860px){.painel{grid-template-columns:1fr}.fila{border-right:0;border-bottom:1px solid var(--linha)}.cmp{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+
+<header class="topo">
+  <div class="topo-linha">
+    <h1>Plataforma de Betonagens</h1>
+    <span class="sub">Protótipo de interface · PAB · Guias · FCQ I.CR.033</span>
+  </div>
+  <div class="abas" role="tablist">
+    <button class="aba" role="tab" aria-selected="true" data-v="v1">Empreiteiro · telemóvel</button>
+    <button class="aba" role="tab" aria-selected="false" data-v="v2">Fiscal · telemóvel</button>
+    <button class="aba" role="tab" aria-selected="false" data-v="v3">Fiscal · secretária</button>
+  </div>
+</header>
+
+<!-- ══════════════ VISTA 1 · EMPREITEIRO ══════════════ -->
+<section class="vista on" id="v1">
+  <p class="nota">O encarregado usa isto com uma mão, ao sol, com o camião parado. <b>Orçamento: 45 segundos e quatro toques.</b> Tudo o que não sirva para registar a guia sai do ecrã.</p>
+
+  <div class="leg">
+    <div><span class="sw" style="background:var(--marcacao)"></span> Declarado por pessoa</div>
+    <div><span class="sw" style="background:var(--tinta)"></span> Calculado pelo sistema</div>
+    <div><span class="sw" style="background:var(--ddn)"></span> Confirmado pela central</div>
+  </div>
+
+  <div class="ecras">
+
+    <!-- 1 · Início -->
+    <div class="tel-bloco">
+      <div class="tel-legenda"><div class="n">1 · Início</div><div class="d">A app sabe onde está. Mostra o que interessa hoje, nesta frente.</div></div>
+      <div class="tel"><div class="tel-in">
+        <div class="app-topo"><div class="l1">
+          <div><div class="obra">OBRA 2602</div><div class="nome">Marina Sul · Bloco B</div></div>
+          <span class="sinc pend">2 POR ENVIAR</span>
+        </div></div>
+        <div class="tel-scroll"><div class="corpo">
+
+          <div class="bloco">
+            <div class="bloco-t"><span class="stencil">Betonagem em curso</span><span class="stencil" style="color:var(--ddn-esc)">PAB 49</span></div>
+            <div class="bloco-c">
+              <div style="font-size:13.5px;font-weight:600;margin-bottom:2px">Laje L0 — painel A</div>
+              <div style="font-size:11.5px;color:var(--tinta-2);margin-bottom:13px">Bloco B / Piso 0 · C30/37 · S4</div>
+              <div class="molde">
+                <div class="molde-topo">
+                  <div class="molde-val calc">32,0<span class="un">m³</span></div>
+                  <div class="molde-alvo">previsto 86,0 m³<br>faltam 54,0</div>
+                </div>
+                <div class="molde-caixa">
+                  <div class="molde-tol" style="left:100%;right:0"></div>
+                  <div class="molde-cheio" data-w="37"></div>
+                  <div class="molde-prev" style="left:100%"><span>PREVISTO</span></div>
+                </div>
+                <div class="molde-esc"><span>0</span><span>43</span><span>86 m³</span></div>
+              </div>
+              <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--tinta-2);margin-top:11px">4 guias · última às 11:10</div>
+            </div>
+          </div>
+
+          <button class="btn btn-p" data-ir="2">Registar guia</button>
+          <div class="btn-nota">Abre a câmara. A guia fica ligada ao PAB 49.</div>
+
+          <div class="stencil" style="margin:20px 0 8px">Também aprovados para hoje</div>
+          <div class="bloco" style="padding:0">
+            <div class="pab"><div class="pab-n"><small>PAB</small>50</div><div class="pab-i"><div class="el">Pilares P9 a P14</div><div class="lo">Bloco B / Piso 0 · C35/45</div><div class="gp">◎ a 40 m de si</div></div></div>
+            <div class="pab"><div class="pab-n"><small>PAB</small>51</div><div class="pab-i"><div class="el">Muro M4</div><div class="lo">Bloco B / Piso -1 · C30/37</div><div class="gp">◎ a 110 m de si</div></div></div>
+          </div>
+
+        </div></div>
+      </div></div>
+    </div>
+
+    <!-- 2 · Registar guia -->
+    <div class="tel-bloco">
+      <div class="tel-legenda"><div class="n">2 · Registar guia</div><div class="d">O ecrã que decide tudo. Sem PAB não existe — não é um botão desativado, é um ecrã que não abre.</div></div>
+      <div class="tel"><div class="tel-in">
+        <div class="app-topo"><div class="l1">
+          <div><div class="obra">REGISTAR GUIA</div><div class="nome">PAB 49 · Laje L0 — painel A</div></div>
+        </div></div>
+        <div class="tel-scroll"><div class="corpo">
+
+          <div class="aviso av-ddn"><span class="ic">◎</span><div><div class="tt">PAB 49 selecionado</div><div class="tx">Está a 8 m da frente. Toque para escolher outro.</div></div></div>
+
+          <div class="bloco">
+            <div class="bloco-t"><span class="stencil">Lido da guia</span><span class="stencil">18/18 campos</span></div>
+            <div class="bloco-c" style="display:flex;gap:12px">
+              <div class="guia-foto"></div>
+              <div style="flex:1;min-width:0">
+                <div class="campo"><span class="et">Guia n.º</span><span class="vl dec">118601<span class="origem o-dec">lido</span></span></div>
+                <div class="campo"><span class="et">Central</span><span class="vl dec">Betão Liz</span></div>
+                <div class="campo"><span class="et">Volume</span><span class="vl dec">8,00 m³</span></div>
+                <div class="campo"><span class="et">Classe</span><span class="vl conf">C30/37<span class="origem o-conf">= PAB</span></span></div>
+                <div class="campo"><span class="et">Hora de carga</span><span class="vl dec">11:14</span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="aviso av-hivis"><span class="ic">!</span><div><div class="tt">Confirme o slump</div><div class="tx">Leitura pouco nítida. Escrito na guia: 190 mm.</div></div></div>
+
+          <div class="bloco"><div class="bloco-c">
+            <div class="campo"><span class="et">Slump medido</span><span class="vl dec">190 mm</span></div>
+            <div class="campo"><span class="et">Temperatura</span><span class="vl dec">28 °C</span></div>
+            <div class="campo"><span class="et">Hora de descarga</span><span class="vl calc">11:58<span class="origem o-calc">agora</span></span></div>
+            <div class="campo"><span class="et">Carga → descarga</span><span class="vl calc">44 min</span></div>
+            <div class="campo"><span class="et">Acumulado no PAB</span><span class="vl calc">40,0 de 86,0 m³</span></div>
+          </div></div>
+
+          <button class="btn btn-p" data-ir="3">Confirmar e registar</button>
+          <div class="btn-nota">Grava no telemóvel. Envia quando houver rede.</div>
+
+        </div></div>
+      </div></div>
+    </div>
+
+    <!-- 3 · Betonagem em curso -->
+    <div class="tel-bloco">
+      <div class="tel-legenda"><div class="n">3 · Betonagem em curso</div><div class="d">O acumulador do lote impede o fecho enquanto faltar provete. Avisa antes, não depois.</div></div>
+      <div class="tel"><div class="tel-in">
+        <div class="app-topo"><div class="l1">
+          <div><div class="obra">PAB 49 · EM BETONAGEM</div><div class="nome">Laje L0 — painel A</div></div>
+          <span class="sinc ok">ENVIADO</span>
+        </div></div>
+        <div class="tel-scroll"><div class="corpo">
+
+          <div class="bloco"><div class="bloco-c">
+            <div class="molde">
+              <div class="molde-topo">
+                <div class="molde-val calc">40,0<span class="un">m³</span></div>
+                <div class="molde-alvo">previsto 86,0 m³<br>tolerância +10%</div>
+              </div>
+              <div class="molde-caixa">
+                <div class="molde-tol" style="left:100%;right:0"></div>
+                <div class="molde-cheio" data-w="46"></div>
+                <div class="molde-prev" style="left:100%"><span>PREVISTO</span></div>
+              </div>
+              <div class="molde-esc"><span>0</span><span>43</span><span>86 m³</span></div>
+            </div>
+          </div></div>
+
+          <div class="aviso av-hivis"><span class="ic">!</span><div><div class="tt">Falta moldar 1 provete</div><div class="tx">165 m³ de C30/37 colocados desde a última amostra. O lote exige nova amostra antes da próxima betonagem.</div></div></div>
+
+          <div class="bloco">
+            <div class="bloco-t"><span class="stencil">Guias registadas</span><span class="stencil">5</span></div>
+            <div class="gr"><span class="gr-h">06:50</span><span class="gr-n">118588</span><span class="gr-v">8,00</span><span class="gr-t">45 min</span></div>
+            <div class="gr"><span class="gr-h">07:38</span><span class="gr-n">118591</span><span class="gr-v">8,00</span><span class="gr-t">42 min</span></div>
+            <div class="gr alerta"><span class="gr-h">08:22</span><span class="gr-n">118594</span><span class="gr-v">8,00</span><span class="gr-t">123 min</span></div>
+            <div class="gr"><span class="gr-h">10:28</span><span class="gr-n">118597</span><span class="gr-v">8,00</span><span class="gr-t">42 min</span></div>
+            <div class="gr"><span class="gr-h">11:14</span><span class="gr-n">118601</span><span class="gr-v">8,00</span><span class="gr-t">44 min</span></div>
+          </div>
+
+          <button class="btn btn-p" data-ir="2">Registar outra guia</button>
+          <div style="height:9px"></div>
+          <button class="btn btn-s" disabled>Fechar betonagem</button>
+          <div class="btn-nota">Disponível depois de moldar o provete em falta.</div>
+
+        </div></div>
+      </div></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ══════════════ VISTA 2 · FISCAL TELEMÓVEL ══════════════ -->
+<section class="vista" id="v2">
+  <p class="nota">A ficha I.CR.033 preenchida <b>em obra, no momento da inspeção</b>. Cada critério guarda a sua própria hora e localização — é isso que impede que a checklist seja preenchida toda de uma vez no fim. Toque nos botões para experimentar.</p>
+
+  <div class="ecras">
+
+    <div class="tel-bloco">
+      <div class="tel-legenda"><div class="n">1 · Checklist I.CR.033</div><div class="d">34 critérios, 6 secções, 4 colunas de inspeção. Alvos grandes: usa-se com luvas.</div></div>
+      <div class="tel"><div class="tel-in">
+        <div class="app-topo"><div class="l1">
+          <div><div class="obra">FCQ 033/049 · INSP.</div><div class="nome">PAB 49 · Laje L0 — painel A</div></div>
+          <span class="sinc pend">22/34</span>
+        </div></div>
+        <div class="tel-scroll"><div class="corpo">
+
+          <div class="sec">
+            <div class="sec-t"><span class="pt pt-ok"></span><span class="tt">Implantação</span><span class="ct">1/1</span></div>
+            <div class="crit"><span class="tx">Localização dos elementos</span>
+              <div class="tri" data-tri><button data-m="c" class="on-c">√</button><button data-m="x">X</button><button data-m="n">∕</button></div></div>
+            <div class="assin">Elaborado por J. Salvador · 28/07/2026 07:12</div>
+          </div>
+
+          <div class="sec">
+            <div class="sec-t"><span class="pt pt-nc"></span><span class="tt">Cofragem</span><span class="ct">5/5 · 1 NC</span></div>
+            <div class="crit"><span class="tx">Geometria e dimensões dos elementos</span>
+              <div class="tri" data-tri><button data-m="c" class="on-c">√</button><button data-m="x">X</button><button data-m="n">∕</button></div></div>
+            <div class="crit"><span class="tx">Estabilidade e travamento</span>
+              <div class="tri" data-tri><button data-m="c">√</button><button data-m="x" class="on-x">X</button><button data-m="n">∕</button></div></div>
+            <div class="crit" style="background:var(--ferro-claro);padding-top:0;padding-bottom:11px;border-bottom:1px solid #EDEBE7">
+              <span class="tx" style="font-size:11.5px;color:var(--ferro)"><b>Anotação obrigatória:</b> escoramento por reforçar no alinhamento C</span></div>
+            <div class="crit"><span class="tx">Limpeza da cofragem</span>
+              <div class="tri" data-tri><button data-m="c" class="on-c">√</button><button data-m="x">X</button><button data-m="n">∕</button></div></div>
+            <div class="crit"><span class="tx">Produto para descofragem</span>
+              <div class="tri" data-tri><button data-m="c" class="on-c">√</button><button data-m="x">X</button><button data-m="n">∕</button></div></div>
+            <div class="crit"><span class="tx">Estanqueidade da cofragem</span>
+              <div class="tri" data-tri><button data-m="c" class="on-c">√</button><button data-m="x">X</button><button data-m="n">∕</button></div></div>
+            <div class="assin">Elaborado por J. Salvador · 28/07/2026 07:31 · ◎ em obra</div>
+          </div>
+
+          <div class="sec">
+            <div class="sec-t"><span class="pt pt-pend"></span><span class="tt">Armaduras</span><span class="ct">11/14</span></div>
+            <div class="crit"><span class="tx">Diâmetros de acordo com o projeto</span>
+              <div class="tri" data-tri><button data-m="c" class="on-c">√</button><button data-m="x">X</button><button data-m="n">∕</button></div></div>
+            <div class="crit"><span class="tx">Recobrimento em fundações</span>
+              <div class="tri" data-tri><button data-m="c">√</button><button data-m="x">X</button><button data-m="n" class="on-n">∕</button></div></div>
+            <div class="crit"><span class="tx">Aplicação de fibras metálicas</span>
+              <div class="tri" data-tri><button data-m="c">√</button><button data-m="x">X</button><button data-m="n">∕</button></div></div>
+          </div>
+
+          <div class="sec">
+            <div class="sec-t"><span class="pt pt-pend"></span><span class="tt">Betonagem</span><span class="ct">0/4</span></div>
+            <div class="crit"><span class="tx">Condições atmosféricas</span>
+              <div class="tri" data-tri><button data-m="c">√</button><button data-m="x">X</button><button data-m="n">∕</button></div></div>
+            <div class="crit"><span class="tx">Altura de queda ≤ 1,5 m</span>
+              <div class="tri" data-tri><button data-m="c">√</button><button data-m="x">X</button><button data-m="n">∕</button></div></div>
+          </div>
+
+        </div></div>
+      </div></div>
+    </div>
+
+    <div class="tel-bloco">
+      <div class="tel-legenda"><div class="n">2 · Aprovar o PAB</div><div class="d">O bloqueio não é um aviso: as secções anteriores à betonagem têm de estar feitas primeiro.</div></div>
+      <div class="tel"><div class="tel-in">
+        <div class="app-topo"><div class="l1">
+          <div><div class="obra">PAB 50 · SUBMETIDO</div><div class="nome">Pilares P9 a P14</div></div>
+        </div></div>
+        <div class="tel-scroll"><div class="corpo">
+
+          <div class="bloco"><div class="bloco-c">
+            <div class="campo"><span class="et">Elemento</span><span class="vl dec">Pilares P9-P14</span></div>
+            <div class="campo"><span class="et">Volume previsto</span><span class="vl dec">18,50 m³</span></div>
+            <div class="campo"><span class="et">Classe</span><span class="vl dec">C35/45</span></div>
+            <div class="campo"><span class="et">Data prevista</span><span class="vl dec">02/08/2026</span></div>
+            <div class="campo"><span class="et">Submetido por</span><span class="vl dec">M. Ferreira</span></div>
+          </div></div>
+
+          <div class="stencil" style="margin:18px 0 8px">Verificações antes de betonar</div>
+          <div class="bloco" style="padding:0">
+            <div class="crit"><span class="tx">Implantação</span><span class="mono" style="font-size:11.5px;color:var(--ddn-esc);font-weight:600">1/1 ✓</span></div>
+            <div class="crit"><span class="tx">Cofragem</span><span class="mono" style="font-size:11.5px;color:var(--ddn-esc);font-weight:600">5/5 ✓</span></div>
+            <div class="crit"><span class="tx">Armaduras</span><span class="mono" style="font-size:11.5px;color:var(--hivis);font-weight:600">11/14</span></div>
+            <div class="crit"><span class="tx">Juntas de dilatação</span><span class="mono" style="font-size:11.5px;color:var(--tinta-2);font-weight:600">0/7</span></div>
+          </div>
+
+          <div class="aviso av-ferro" style="margin-top:11px"><span class="ic">✕</span><div><div class="tt">Faltam 10 verificações</div><div class="tx">O PAB não pode ser aprovado enquanto as secções de armaduras e juntas não estiverem concluídas.</div></div></div>
+
+          <button class="btn btn-p" disabled>Aprovar PAB 50</button>
+          <div style="height:9px"></div>
+          <button class="btn btn-s">Continuar a checklist</button>
+
+        </div></div>
+      </div></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ══════════════ VISTA 3 · FISCAL SECRETÁRIA ══════════════ -->
+<section class="vista" id="v3">
+  <p class="nota">O fiscal não revê 210 betonagens por dia. Revê <b>o que está sinalizado e uma amostra aleatória cega</b> do que passou limpo. A fila está ordenada por risco: começa no topo e pode parar quando quiser, porque o que fica por ver é sempre o menos arriscado.</p>
+
+  <div class="painel">
+    <div class="fila">
+      <div class="fila-t"><h3>Fila de exceções</h3><p>14 por rever · 3 críticas · 2 da amostra aleatória</p></div>
+      <div style="overflow-y:auto">
+        <button class="fi sel"><span class="fi-r r-alto">92</span><div class="fi-i"><div class="t1">Guia 118505 · PAB 48</div><div class="t2">Marina Sul · Pilares P1-P8</div><div class="t3">Classe divergente</div></div></button>
+        <button class="fi"><span class="fi-r r-alto">78</span><div class="fi-i"><div class="t1">Guia 118594 · PAB 49</div><div class="t2">Marina Sul · Laje L0</div><div class="t3">Tempo 123 min</div></div></button>
+        <button class="fi"><span class="fi-r r-alto">71</span><div class="fi-i"><div class="t1">Lote C30/37 · julho</div><div class="t2">Marina Sul</div><div class="t3">1 amostra em falta</div></div></button>
+        <button class="fi"><span class="fi-r r-med">54</span><div class="fi-i"><div class="t1">Guia 118597 · PAB 49</div><div class="t2">Marina Sul · Laje L0</div><div class="t3">Foto da galeria</div></div></button>
+        <button class="fi"><span class="fi-r r-med">47</span><div class="fi-i"><div class="t1">PAB 47 · sobreconsumo</div><div class="t2">Marina Sul · Sapatas S12-S15</div><div class="t3">+6,3% de volume</div></div></button>
+        <button class="fi"><span class="fi-r r-baixo">12</span><div class="fi-i"><div class="t1">PAB 45 · amostra aleatória</div><div class="t2">Marina Sul · Sapatas S01-S06</div><div class="t2" style="color:var(--tinta-3)">Sem alertas</div></div></button>
+      </div>
+    </div>
+
+    <div class="det">
+      <div class="det-h">
+        <div>
+          <h2>Guia 118505 — classe divergente</h2>
+          <div class="s">PAB 48 · Pilares P1 a P8 · Bloco B / Piso 0 · registada por M. Ferreira em 21/07/2026 08:47</div>
+        </div>
+        <span class="fi-r r-alto" style="width:44px;height:44px;font-size:18px">92</span>
+      </div>
+
+      <div style="display:flex;gap:22px;align-items:flex-start;flex-wrap:wrap">
+        <div class="guia-foto foto-g"></div>
+        <div style="flex:1;min-width:290px">
+          <div class="cmp">
+            <div class="hd">Parâmetro</div><div class="hd">Aprovado no PAB</div><div class="hd">Entregue na guia</div>
+            <div>Classe de resistência</div><div class="mono">C35/45</div><div class="mono div mau" style="font-weight:700">C30/37</div>
+            <div>Classe de exposição</div><div class="mono">XC4(P)</div><div class="mono">XC4(P)</div>
+            <div>Volume</div><div class="mono">7,00 m³</div><div class="mono">7,00 m³</div>
+            <div>Slump</div><div class="mono">160–210 mm</div><div class="mono">175 mm</div>
+            <div>Carga → descarga</div><div class="mono">máx. 90 min</div><div class="mono">44 min</div>
+            <div>Central</div><div class="mono">—</div><div class="mono">Unibetão</div>
+          </div>
+
+          <div class="aviso av-ferro"><span class="ic">✕</span><div><div class="tt">Betão de classe inferior à aprovada em elementos verticais estruturais</div><div class="tx">A guia foi registada e não pode ser apagada. Decida se o betão é aceite com justificação de projeto, ou se o elemento é demolido e refeito.</div></div></div>
+
+          <div class="acoes">
+            <button class="btn btn-p">Validar com justificação</button>
+            <button class="btn btn-s">Devolver ao empreiteiro</button>
+            <button class="btn btn-s">Escalar para o diretor de qualidade</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rodape">
+    Cada ação fica registada com nome, hora e motivo. Nada nesta fila se dispensa com um toque: um alerta resolve-se com decisão e justificação, ou fica aberto e impede o fecho da FCQ.
+  </div>
+</section>
+
+<script>
+// navegação entre vistas
+document.querySelectorAll('.aba').forEach(a=>{
+  a.addEventListener('click',()=>{
+    document.querySelectorAll('.aba').forEach(x=>x.setAttribute('aria-selected','false'));
+    a.setAttribute('aria-selected','true');
+    document.querySelectorAll('.vista').forEach(v=>v.classList.remove('on'));
+    document.getElementById(a.dataset.v).classList.add('on');
+    window.scrollTo({top:0,behavior:'smooth'});
+  });
+});
+
+// enchimento do molde (animação única de entrada)
+function encher(){
+  document.querySelectorAll('.molde-cheio').forEach(el=>{
+    const w=el.dataset.w;
+    el.style.width='0%';
+    requestAnimationFrame(()=>{setTimeout(()=>{el.style.width=w+'%';},60);});
+  });
+}
+encher();
+
+// checklist de três estados
+document.querySelectorAll('[data-tri]').forEach(g=>{
+  g.querySelectorAll('button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      const on=b.className.includes('on-');
+      g.querySelectorAll('button').forEach(x=>x.className='');
+      if(!on) b.className='on-'+b.dataset.m;
+    });
+  });
+});
+
+// seleção na fila de exceções
+document.querySelectorAll('.fi').forEach(f=>{
+  f.addEventListener('click',()=>{
+    document.querySelectorAll('.fi').forEach(x=>x.classList.remove('sel'));
+    f.classList.add('sel');
+  });
+});
+
+// botões de navegação simulada entre ecrãs do telemóvel
+document.querySelectorAll('[data-ir]').forEach(b=>{
+  b.addEventListener('click',()=>{
+    const alvo=document.querySelectorAll('#v1 .tel-bloco')[b.dataset.ir-1];
+    if(alvo) alvo.scrollIntoView({behavior:'smooth',block:'center',inline:'center'});
+  });
+});
+</script>
+</body>
+</html>
