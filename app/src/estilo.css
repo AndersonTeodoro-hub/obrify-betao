@@ -1,0 +1,134 @@
+/* Contexto de uso: uma mão, sol directo, poeira, luvas, e um camião parado a
+   contar dinheiro. Contraste alto, alvos grandes, números em monoespaçado
+   tabular. As fontes são as do sistema — as locais entram no incremento 4,
+   com o resto do que serve para funcionar sem rede. */
+
+:root {
+  --betao-fundo: #DAD7D0;
+  --papel: #FFFFFF;
+  --tinta: #16191A;
+  --tinta-2: #5A615F;
+  --linha: #CFCBC3;
+  --linha-forte: #A9A49A;
+  --ddn: #0E7A3C;
+  --ddn-esc: #0A5C2D;
+  --ferro: #AF3720;
+  --ferro-claro: #FBE7E2;
+  --marcacao: #1F4FD8;
+  --r: 3px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  background: var(--betao-fundo);
+  color: var(--tinta);
+  font-family: system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 1.45;
+}
+
+.mono {
+  font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.ecra {
+  max-width: 34rem;
+  margin: 0 auto;
+  padding: 1.25rem 1rem 4rem;
+}
+
+h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; }
+h2 { font-size: 1rem; font-weight: 700; margin: 1.75rem 0 0.5rem; }
+.sub { color: var(--tinta-2); font-size: 0.85rem; margin-bottom: 1.5rem; }
+
+.topo {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--linha-forte);
+}
+.topo .nome { font-weight: 600; }
+.topo .perfil { font-size: 0.7rem; color: var(--tinta-2); letter-spacing: 0.08em; }
+
+label {
+  display: block;
+  font-size: 0.85rem;
+  color: var(--tinta-2);
+  margin: 0.9rem 0 0.25rem;
+}
+
+input {
+  display: block;
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  color: var(--marcacao); /* proveniência: valor declarado por uma pessoa */
+  background: var(--papel);
+  border: 1.5px solid var(--linha-forte);
+  border-radius: var(--r);
+}
+input:focus-visible { outline: 3px solid var(--marcacao); outline-offset: 1px; }
+
+.btn {
+  display: block;
+  width: 100%;
+  min-height: 3.25rem;
+  margin-top: 1.25rem;
+  padding: 0.9rem 1rem;
+  font: inherit;
+  font-weight: 700;
+  border: 0;
+  border-radius: var(--r);
+  cursor: pointer;
+}
+.btn-p { background: var(--ddn); color: #fff; }
+.btn-p:hover:not([disabled]) { background: var(--ddn-esc); }
+.btn-s {
+  width: auto;
+  min-height: 2.75rem;
+  margin-top: 0;
+  background: var(--papel);
+  color: var(--tinta);
+  border: 1.5px solid var(--linha-forte);
+  font-weight: 600;
+}
+.btn[disabled] { background: var(--linha); color: var(--tinta-2); cursor: not-allowed; }
+.btn:focus-visible { outline: 3px solid var(--marcacao); outline-offset: 2px; }
+
+.lista { list-style: none; background: var(--papel); border: 1px solid var(--linha); border-radius: var(--r); }
+.obra {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  padding: 0.75rem 0.85rem;
+  border-bottom: 1px solid var(--linha);
+}
+.obra:last-child { border-bottom: 0; }
+.obra .codigo { font-weight: 700; }
+.obra .designacao { flex: 1; min-width: 0; }
+.obra .inactiva { font-size: 0.75rem; color: var(--tinta-2); }
+.vazio { padding: 0.85rem; color: var(--tinta-2); font-size: 0.9rem; }
+
+/* O erro é para ser lido, não para ser ignorado: fica no fluxo, com contraste,
+   e mostra a mensagem que veio — não uma reescrita simpática dela. */
+.erro {
+  margin-top: 1rem;
+  padding: 0.75rem 0.85rem;
+  background: var(--ferro-claro);
+  border-left: 4px solid var(--ferro);
+  border-radius: var(--r);
+  color: var(--tinta);
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}

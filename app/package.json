@@ -1,0 +1,17 @@
+{
+  "name": "obrify-betao-app",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "verificar": "tsc --noEmit",
+    "build": "tsc --noEmit && vite build"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.112.3"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2",
+    "vite": "8.2.1"
+  }
+}
