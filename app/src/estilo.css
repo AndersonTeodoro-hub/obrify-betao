@@ -217,6 +217,92 @@ input:focus-visible { outline: 3px solid var(--marcacao); outline-offset: 1px; }
   text-transform: uppercase;
 }
 
+/* ── ficha I.CR.033 ──────────────────────────────────────────────────────── */
+
+.cabecalho-ficha { padding-bottom: 1rem; border-bottom: 1px solid var(--linha-forte); }
+.linha-ficha { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+.numero-ficha { font-size: 1.35rem; font-weight: 700; }
+.elemento-ficha { margin-top: 0.35rem; font-weight: 600; }
+.sub-ficha { margin-top: 0.5rem; font-size: 0.78rem; color: var(--tinta-2); line-height: 1.5; }
+
+.estado-RASCUNHO { background: var(--hivis-claro); color: #6B4B00; }
+.estado-EMITIDA  { background: var(--ddn-claro); color: var(--ddn-esc); }
+
+.seccao {
+  margin-top: 1.25rem;
+  background: var(--papel);
+  border: 1px solid var(--linha);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.seccao-cabecalho {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.7rem 0.85rem;
+  background: #F4F2EE;
+  border-bottom: 1px solid var(--linha);
+}
+.seccao-nome { flex: 1; font-weight: 700; font-size: 0.95rem; }
+.seccao-contagem { font-size: 0.8rem; color: var(--tinta-2); }
+
+.ponto { width: 0.6rem; height: 0.6rem; border-radius: 50%; flex-shrink: 0; }
+.ponto-ok { background: var(--ddn); }
+.ponto-pendente { background: var(--hivis); }
+.ponto-nc { background: var(--ferro); }
+
+.criterio-bloco { border-bottom: 1px solid #EDEBE7; }
+.criterio-bloco:last-child { border-bottom: 0; }
+.criterio { display: flex; align-items: center; gap: 0.6rem; padding: 0.6rem 0.85rem; }
+.criterio-codigo { flex-shrink: 0; font-size: 0.7rem; color: var(--tinta-2); }
+.criterio-texto { flex: 1; min-width: 0; font-size: 0.85rem; line-height: 1.35; }
+
+/* Três estados, com alvos de 2,75rem: usa-se com luvas e com uma mão só. */
+.tri {
+  display: flex;
+  flex-shrink: 0;
+  border: 1.5px solid var(--linha-forte);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.tri button {
+  width: 2.75rem;
+  height: 2.75rem;
+  padding: 0;
+  font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: var(--tinta-3, var(--tinta-2));
+  background: var(--papel);
+  border: 0;
+  border-right: 1px solid var(--linha);
+  cursor: pointer;
+}
+.tri button:last-child { border-right: 0; }
+.tri button:hover:not([disabled]) { background: #F1EFEB; }
+.tri button:focus-visible { outline: 3px solid var(--marcacao); outline-offset: -3px; }
+.tri button[disabled] { cursor: default; }
+.tri button.on-C { background: var(--ddn); color: #fff; }
+.tri button.on-NC { background: var(--ferro); color: #fff; }
+.tri button.on-NA { background: var(--tinta-2); color: #fff; }
+
+/* A anotação de uma não conformidade não é decoração: é o que sai no impresso
+   e no anexo, e é por ela que alguém sabe o que houve. */
+.anotacao-registada {
+  padding: 0 0.85rem 0.6rem 0.85rem;
+  font-size: 0.82rem;
+  color: var(--ferro);
+  background: var(--ferro-claro);
+  padding-top: 0.5rem;
+}
+.forma-anotacao { padding: 0.6rem 0.85rem 0.85rem; background: var(--ferro-claro); }
+.forma-anotacao input { margin-bottom: 0.5rem; }
+.forma-anotacao .btn { margin-top: 0.4rem; }
+.forma-anotacao .btn-s { width: 100%; }
+
+/* Enquanto o servidor não confirmar, nada nesta lista se toca. */
+.a-gravar { opacity: 0.6; pointer-events: none; }
+
 select {
   display: block;
   width: 100%;

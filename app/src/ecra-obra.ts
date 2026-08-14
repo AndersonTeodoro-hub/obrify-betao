@@ -27,6 +27,10 @@ const PODE_CRIAR_FRENTE = ['ADMIN', 'DIRETOR_QUALIDADE', 'FISCALIZACAO']
  *  administra contas e obras, não pede betonagens. */
 const PODE_SUBMETER_PAB = ['EMPREITEIRO', 'FISCALIZACAO', 'DIRETOR_QUALIDADE']
 
+/** Quem pode preencher a ficha, segundo betonagens.marcar_item_fcq. É a
+ *  fiscalização que inspecciona — o empreiteiro pede, não se auto-verifica. */
+const PODE_MARCAR_FICHA = ['FISCALIZACAO', 'DIRETOR_QUALIDADE']
+
 function dataISO(dias: number): string {
   const d = new Date()
   d.setDate(d.getDate() + dias)
@@ -99,7 +103,13 @@ function desenharFrentes(destino: HTMLElement, frentes: Frente[]): void {
   }
 }
 
-function desenharPabs(destino: HTMLElement, pabs: Pab[], frentes: Frente[]): void {
+function desenharPabs(
+  destino: HTMLElement,
+  pabs: Pab[],
+  frentes: Frente[],
+  podeAbrirFicha: boolean,
+  aoAbrirFicha: (pab: Pab) => void,
+): void {
   destino.replaceChildren()
 
   if (pabs.length === 0) {
@@ -146,8 +156,27 @@ function desenharPabs(destino: HTMLElement, pabs: Pab[], frentes: Frente[]): voi
     estado.textContent = pab.estado.replace('_', ' ')
 
     const item = document.createElement('li')
-    item.className = 'pab'
-    item.append(numero, texto, estado)
+
+    // Quem não pode marcar a ficha vê a linha, mas ela não abre — é a mesma
+    // regra que betonagens.marcar_item_fcq aplica, dita antes de o utilizador
+    // bater nela.
+    if (podeAbrirFicha) {
+      const seta = document.createElement('span')
+      seta.className = 'seta'
+      seta.setAttribute('aria-hidden', 'true')
+      seta.textContent = '›'
+
+      const botao = document.createElement('button')
+      botao.type = 'button'
+      botao.className = 'linha-botao pab'
+      botao.append(numero, texto, estado, seta)
+      botao.addEventListener('click', () => aoAbrirFicha(pab))
+      item.append(botao)
+    } else {
+      item.className = 'pab'
+      item.append(numero, texto, estado)
+    }
+
     destino.append(item)
   }
 }
@@ -173,9 +202,11 @@ export function montarEcraObra(
   obra: Obra,
   utilizador: UtilizadorDeDominio,
   aoVoltar: () => void,
+  aoAbrirFicha: (pab: Pab) => void,
 ): void {
   const podeCriarFrente = PODE_CRIAR_FRENTE.includes(utilizador.perfil)
   const podeSubmeter = PODE_SUBMETER_PAB.includes(utilizador.perfil)
+  const podeAbrirFicha = PODE_MARCAR_FICHA.includes(utilizador.perfil)
 
   destino.innerHTML = `
     <section class="ecra">
@@ -276,7 +307,7 @@ export function montarEcraObra(
     Promise.all([lerFrentes(obra.id), lerPabs(obra.id)])
       .then(([frentes, pabs]) => {
         desenharFrentes(listaFrentes, frentes)
-        desenharPabs(listaPabs, pabs, frentes)
+        desenharPabs(listaPabs, pabs, frentes, podeAbrirFicha, aoAbrirFicha)
 
         if (formaPab !== null && semFrentes !== null && selectFrente !== null) {
           preencherFrentes(selectFrente, frentes)

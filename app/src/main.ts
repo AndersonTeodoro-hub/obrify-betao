@@ -9,14 +9,17 @@ import { utilizadorDeDominio } from './sessao'
 import { montarEcraEntrar } from './ecra-entrar'
 import { montarEcraObras } from './ecra-obras'
 import { montarEcraObra } from './ecra-obra'
-import { mensagemDeErro, type Obra } from './dominio'
+import { montarEcraFicha } from './ecra-ficha'
+import { mensagemDeErro, type Obra, type Pab } from './dominio'
 
 const destino = document.querySelector<HTMLElement>('#app')
 if (destino === null) throw new Error('Falta o elemento #app no index.html.')
 const app = destino
 
-// A vista da ficha entra na fase C, quando existir ecrã que a desenhe.
-type Vista = { nome: 'obras' } | { nome: 'obra'; obra: Obra }
+type Vista =
+  | { nome: 'obras' }
+  | { nome: 'obra'; obra: Obra }
+  | { nome: 'ficha'; obra: Obra; pab: Pab }
 
 let vista: Vista = { nome: 'obras' }
 
@@ -58,9 +61,24 @@ function desenhar(): void {
             (obra) => irPara({ nome: 'obra', obra }),
           )
           return
-        case 'obra':
-          montarEcraObra(app, vista.obra, utilizador, () => irPara({ nome: 'obras' }))
+        // Os blocos existem para prender a vista já estreitada numa constante:
+        // dentro de um fecho, o `vista` volta a ser a união inteira.
+        case 'obra': {
+          const { obra } = vista
+          montarEcraObra(
+            app,
+            obra,
+            utilizador,
+            () => irPara({ nome: 'obras' }),
+            (pab) => irPara({ nome: 'ficha', obra, pab }),
+          )
           return
+        }
+        case 'ficha': {
+          const { obra, pab } = vista
+          montarEcraFicha(app, obra, pab, utilizador, () => irPara({ nome: 'obra', obra }))
+          return
+        }
       }
     })
     .catch(mostrarFalha)

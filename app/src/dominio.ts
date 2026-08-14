@@ -6,6 +6,7 @@
 // tem INSERT, UPDATE nem DELETE em tabela nenhuma do domínio — se um dia uma
 // escrita daqui funcionar sem rpc, é incidente.
 
+import { proximoRegisto } from './dispositivo'
 import { betonagens } from './supabase'
 
 // ── erros ───────────────────────────────────────────────────────────────────
@@ -84,6 +85,59 @@ export type Pab = {
   estado: EstadoPab
 }
 
+// ── ficha I.CR.033 ──────────────────────────────────────────────────────────
+
+export type SeccaoFcq =
+  | 'implantacao'
+  | 'cofragem'
+  | 'armaduras'
+  | 'juntas'
+  | 'betonagem'
+  | 'pos_betonagem'
+
+export type ValorFcq = 'C' | 'NC' | 'NA'
+
+/** As três que o gate de aprovação do PAB exige assinadas. Juntas fica de fora
+ *  por decisão de campo: uma junta de betonagem nasce durante o processo e o
+ *  corte e a selagem são posteriores. */
+export const SECCOES_PRE_BETONAGEM: SeccaoFcq[] = ['implantacao', 'cofragem', 'armaduras']
+
+export const NOME_DA_SECCAO: Record<SeccaoFcq, string> = {
+  implantacao: 'Implantação',
+  cofragem: 'Cofragem',
+  armaduras: 'Armaduras',
+  juntas: 'Juntas',
+  betonagem: 'Betonagem',
+  pos_betonagem: 'Pós-betonagem',
+}
+
+export type Ficha = {
+  id: string
+  numero: string
+  estado: 'RASCUNHO' | 'EMITIDA'
+  modelo_impresso_id: string
+}
+
+export type LinhaFicha = {
+  codigo: string
+  seccao: SeccaoFcq
+  criterio: string
+  ordem: number
+}
+
+export type ItemFicha = {
+  linha_codigo: string
+  valor: ValorFcq
+  anotacao: string | null
+}
+
+export type EstadoSeccao = {
+  seccao: SeccaoFcq
+  linhas_da_seccao: number
+  itens_preenchidos: number
+  itens_nao_conformes: number
+}
+
 export type NovoPab = {
   obraId: string
   frenteId: string
@@ -99,19 +153,40 @@ export type NovoPab = {
 
 // ── relógio ─────────────────────────────────────────────────────────────────
 
-let derivaMs: number | null = null
-let medicao: Promise<number> | null = null
+/** Uma medição do desvio do relógio, acompanhada do que ela própria diz valer. */
+type Medida = {
+  /** Desvio em ms. Positivo = máquina atrasada; negativo = adiantada. */
+  deriva: number
+  /** Limite superior do erro desta medição, em ms: metade da viagem mais curta. */
+  incerteza: number
+  /** Date.now() local em que foi feita — é por aqui que se sabe quando caduca. */
+  feitaEm: number
+}
+
+/** Viagens por medição. Fica a mais curta, porque é a que menos assimetria
+ *  entre ida e volta pode esconder, e é a assimetria que produz o erro. */
+const VIAGENS_POR_MEDICAO = 3
+
+/** Ao fim de quanto tempo uma medição deixa de valer. É o único número deste
+ *  bloco que é escolhido em vez de medido: um relógio não está apenas
+ *  desacertado, anda a ritmo diferente, e essa diferença acumula enquanto a
+ *  sessão dura. */
+const VALIDADE_DA_MEDICAO_MS = 5 * 60 * 1000
+
+let medida: Medida | null = null
+let medicao: Promise<Medida> | null = null
 
 /**
- * Quanto é que o relógio desta máquina difere do da base de dados, em
- * milissegundos. Positivo = máquina atrasada; negativo = adiantada.
- *
- * Mede-se contra betonagens.agora(), que devolve o now() do servidor — o mesmo
+ * Uma viagem a betonagens.agora(), que devolve o now() do servidor — o mesmo
  * instante com que as funções de serviço comparam o momento declarado. O
  * cabeçalho Date do HTTP não serve: não é da lista segura do CORS e o Supabase
  * não o expõe, portanto do browser vem sempre null.
+ *
+ * A deriva é estimada pelo ponto médio da viagem, o que assume que a ida e a
+ * volta demoram o mesmo. Quando não demoram, o erro é metade da diferença —
+ * limitado, portanto, por metade da viagem, que é devolvida com ela.
  */
-async function medirDeriva(): Promise<number> {
+async function umaViagem(): Promise<{ deriva: number; viagem: number }> {
   const antes = Date.now()
   const { data, error } = await betonagens().rpc('agora')
   const depois = Date.now()
@@ -121,31 +196,55 @@ async function medirDeriva(): Promise<number> {
   if (!Number.isFinite(servidor)) {
     throw new Error(`betonagens.agora() devolveu uma hora ilegível: ${String(data)}`)
   }
-  return servidor - (antes + depois) / 2
+  return { deriva: servidor - (antes + depois) / 2, viagem: depois - antes }
 }
 
 /**
- * O instante que o dispositivo declara, já corrigido da deriva medida.
+ * O desvio do relógio desta máquina, medido em várias viagens seguidas.
+ *
+ * Seguidas e não em paralelo de propósito: pedidos simultâneos disputam a
+ * mesma ligação e inflacionam-se uns aos outros, e o que aqui interessa é
+ * apanhar uma viagem genuinamente curta.
+ *
+ * Qualquer viagem que falhe faz falhar a medição inteira. É deliberado: uma
+ * medição feita com as sobras de uma rede que está a falhar não vale mais do
+ * que nenhuma, e quem chamou tem de o saber.
+ */
+async function medirDeriva(): Promise<Medida> {
+  let melhor = await umaViagem()
+  for (let i = 1; i < VIAGENS_POR_MEDICAO; i++) {
+    const outra = await umaViagem()
+    if (outra.viagem < melhor.viagem) melhor = outra
+  }
+  return { deriva: melhor.deriva, incerteza: melhor.viagem / 2, feitaEm: Date.now() }
+}
+
+/**
+ * O instante que o dispositivo declara, corrigido da deriva medida e recuado
+ * da incerteza dessa medição.
  *
  * Continua a ser metadado — o servidor grava o seu próprio relógio em separado
  * e a divergência entre os dois é, por si só, um sinal de risco. O que a
  * correcção evita é a recusa de registos legítimos: as funções de serviço
  * rejeitam com PT422 qualquer momento à frente do relógio do servidor, sem
- * margem nenhuma, e nesta máquina bastaram 339 ms de avanço para a primeira
- * submissão de PAB ser recusada.
+ * margem nenhuma.
  *
- * Não há margem fixa inventada: aplica-se a diferença medida, e mais nada.
+ * Apontar ao relógio do servidor não chega, e foi isso que produziu o PT422 a
+ * meio do preenchimento de uma ficha: a folga que sobrava era só a latência de
+ * ida de cada chamada, e bastava o erro da medição ser maior do que ela para a
+ * folga ficar negativa. Daí a subtracção da incerteza — que não é uma margem
+ * inventada, é o limite superior do erro da própria medição, medido com ela.
  *
  * Se a medição falhar, esta função ATIRA em vez de assumir zero. Assumir zero
  * seria devolver ao utilizador o mesmo PT422 incompreensível que nos trouxe
  * aqui; assim, quem não conseguir acertar o relógio sabe-o e sabe porquê.
  */
 export async function agoraDeclarado(): Promise<string> {
-  let deriva = derivaMs
-  if (deriva === null) {
+  let actual = medida
+  if (actual === null || Date.now() - actual.feitaEm > VALIDADE_DA_MEDICAO_MS) {
     medicao ??= medirDeriva()
     try {
-      deriva = await medicao
+      actual = await medicao
     } catch (causa) {
       medicao = null // a próxima tentativa volta a medir
       throw new Error(
@@ -153,9 +252,10 @@ export async function agoraDeclarado(): Promise<string> {
           `seria recusado. ${mensagemDeErro(causa)}`,
       )
     }
-    derivaMs = deriva
+    medicao = null
+    medida = actual
   }
-  return new Date(Date.now() + deriva).toISOString()
+  return new Date(Date.now() + actual.deriva - actual.incerteza).toISOString()
 }
 
 // ── obras ───────────────────────────────────────────────────────────────────
@@ -231,6 +331,109 @@ export async function submeterPab(dados: NovoPab): Promise<void> {
     p_classe_exposicao: dados.classeExposicao,
     p_dmax_agregado_mm: dados.dmaxAgregadoMm,
     p_classe_consistencia: dados.classeConsistencia,
+  })
+  if (error) throw error
+}
+
+// ── ficha I.CR.033 ──────────────────────────────────────────────────────────
+
+/** A ficha nasce com o PAB, 1:1, na submissão. Não existir é impossível. */
+export async function lerFicha(pabId: string): Promise<Ficha> {
+  const { data, error } = await betonagens()
+    .from('fcq')
+    .select('id, numero, estado, modelo_impresso_id')
+    .eq('pab_id', pabId)
+    .maybeSingle()
+  if (error) throw error
+  if (data === null) {
+    throw new Error(
+      `O PAB ${pabId} não tem ficha associada. A ficha é criada pelo submeter_pab, ` +
+        'na mesma transação — isto não devia poder acontecer.',
+    )
+  }
+  return data as Ficha
+}
+
+/**
+ * Os 20 critérios pré-betonagem, na ordem do impresso.
+ *
+ * Vêm de betonagens.fcq_linha, que a 0010 derivou do mapa_campos.json do
+ * I.CR.033 — não estão escritos nesta aplicação. Se a DDN revir o impresso, é
+ * uma revisão nova do modelo e as fichas antigas continuam a ler a sua.
+ */
+export async function lerLinhasPreBetonagem(modeloImpressoId: string): Promise<LinhaFicha[]> {
+  const { data, error } = await betonagens()
+    .from('fcq_linha')
+    .select('codigo, seccao, criterio, ordem')
+    .eq('modelo_impresso_id', modeloImpressoId)
+    .in('seccao', SECCOES_PRE_BETONAGEM)
+    .order('ordem')
+  if (error) throw error
+  return (data ?? []) as LinhaFicha[]
+}
+
+/** O que está marcado na coluna de inspeção, e só o que está em vigor. */
+export async function lerItensInspecao(fcqId: string): Promise<ItemFicha[]> {
+  const { data, error } = await betonagens()
+    .from('fcq_item')
+    .select('linha_codigo, valor, anotacao')
+    .eq('fcq_id', fcqId)
+    .eq('coluna', 'insp')
+    .is('substituido_por_id', null)
+  if (error) throw error
+  return (data ?? []) as ItemFicha[]
+}
+
+/**
+ * O progresso por secção, lido da vista betonagens.fcq_seccao_estado.
+ *
+ * Podia contar-se do lado do cliente a partir dos itens, mas é a vista que o
+ * servidor usa para decidir se uma secção está completa e se a assinatura
+ * continua em vigor. Ler a mesma fonte evita que o ecrã diga uma coisa e o gate
+ * de aprovação decida outra.
+ */
+export async function lerEstadoSeccoes(fcqId: string): Promise<EstadoSeccao[]> {
+  const { data, error } = await betonagens()
+    .from('fcq_seccao_estado')
+    .select('seccao, linhas_da_seccao, itens_preenchidos, itens_nao_conformes')
+    .eq('fcq_id', fcqId)
+    .eq('coluna', 'insp')
+  if (error) throw error
+  return (data ?? []) as EstadoSeccao[]
+}
+
+/**
+ * Marca um critério. Um de cada vez — não existe «marcar tudo conforme», nem
+ * aqui nem no servidor, e é dos poucos sítios onde a fricção é o objectivo.
+ *
+ * Cada item leva o seu momento e a sua posição na sequência do aparelho. É isso
+ * que torna detectável uma ficha preenchida de uma assentada, no gabinete, na
+ * véspera.
+ */
+export async function marcarItem(
+  fcqId: string,
+  linhaCodigo: string,
+  valor: ValorFcq,
+  anotacao: string | null,
+): Promise<void> {
+  // O relógio primeiro: se a medição falhar, não se queima um número da
+  // sequência à toa.
+  const momento = await agoraDeclarado()
+  const dispositivo = proximoRegisto()
+
+  const { error } = await betonagens().rpc('marcar_item_fcq', {
+    // uuid v4. O v7 que decidimos para os registos nascidos no dispositivo
+    // entra com a fila offline, onde serve também de chave de idempotência;
+    // aqui não há fila e a fragmentação de índice a esta escala não se mede.
+    p_id: crypto.randomUUID(),
+    p_fcq_id: fcqId,
+    p_linha_codigo: linhaCodigo,
+    p_coluna: 'insp',
+    p_valor: valor,
+    p_momento_declarado: momento,
+    p_dispositivo_id: dispositivo.id,
+    p_sequencia: dispositivo.sequencia,
+    p_anotacao: anotacao,
   })
   if (error) throw error
 }
