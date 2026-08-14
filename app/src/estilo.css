@@ -12,6 +12,9 @@
   --linha-forte: #A9A49A;
   --ddn: #0E7A3C;
   --ddn-esc: #0A5C2D;
+  --ddn-claro: #E4F1E9;
+  --hivis: #F0A800;
+  --hivis-claro: #FFF3D6;
   --ferro: #AF3720;
   --ferro-claro: #FBE7E2;
   --marcacao: #1F4FD8;
@@ -102,19 +105,130 @@ input:focus-visible { outline: 3px solid var(--marcacao); outline-offset: 1px; }
 .btn[disabled] { background: var(--linha); color: var(--tinta-2); cursor: not-allowed; }
 .btn:focus-visible { outline: 3px solid var(--marcacao); outline-offset: 2px; }
 
-.lista { list-style: none; background: var(--papel); border: 1px solid var(--linha); border-radius: var(--r); }
-.obra {
+.lista {
+  list-style: none;
+  background: var(--papel);
+  border: 1px solid var(--linha);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+.lista > li { border-bottom: 1px solid var(--linha); }
+.lista > li:last-child { border-bottom: 0; }
+
+/* Linha tocável: a largura toda e 3,25rem de altura. Com luvas, ao sol, e uma
+   mão só, um alvo pequeno é um alvo falhado. */
+.linha-botao {
   display: flex;
   align-items: baseline;
   gap: 0.75rem;
-  padding: 0.75rem 0.85rem;
-  border-bottom: 1px solid var(--linha);
+  width: 100%;
+  min-height: 3.25rem;
+  padding: 0.85rem;
+  font: inherit;
+  text-align: left;
+  color: var(--tinta);
+  background: var(--papel);
+  border: 0;
+  cursor: pointer;
 }
-.obra:last-child { border-bottom: 0; }
-.obra .codigo { font-weight: 700; }
-.obra .designacao { flex: 1; min-width: 0; }
-.obra .inactiva { font-size: 0.75rem; color: var(--tinta-2); }
+.linha-botao:hover { background: #FAF9F7; }
+.linha-botao:focus-visible { outline: 3px solid var(--marcacao); outline-offset: -3px; }
+.linha-botao .codigo { font-weight: 700; }
+.linha-botao .designacao { flex: 1; min-width: 0; }
+.linha-botao .seta { color: var(--tinta-2); font-size: 1.25rem; line-height: 1; }
+
+.frente { display: flex; align-items: baseline; gap: 0.75rem; padding: 0.85rem; }
+.frente .designacao { flex: 1; min-width: 0; }
+
+.inactiva { font-size: 0.75rem; color: var(--tinta-2); }
 .vazio { padding: 0.85rem; color: var(--tinta-2); font-size: 0.9rem; }
+
+.voltar {
+  display: inline-block;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.25rem 0.5rem 0;
+  font: inherit;
+  color: var(--ddn-esc);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.voltar:focus-visible { outline: 3px solid var(--marcacao); outline-offset: 2px; }
+
+.cabecalho-obra { padding-bottom: 1rem; border-bottom: 1px solid var(--linha-forte); }
+.cabecalho-obra .codigo-obra { font-size: 0.8rem; color: var(--tinta-2); letter-spacing: 0.08em; }
+.cabecalho-obra .designacao-obra { font-size: 1.25rem; }
+
+.nota-perfil { margin-top: 1.5rem; color: var(--tinta-2); font-size: 0.9rem; }
+
+/* ── pedidos de autorização de betonagem ─────────────────────────────────── */
+
+.pab { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.85rem; }
+.numero-pab {
+  flex-shrink: 0;
+  min-width: 2.25rem;
+  padding: 0.3rem 0.4rem;
+  font-weight: 700;
+  line-height: 1;
+  text-align: center;
+  color: #fff;
+  background: var(--tinta);
+  border-radius: 2px;
+}
+.texto-pab { flex: 1; min-width: 0; }
+.texto-pab .elemento { font-weight: 600; line-height: 1.25; }
+.texto-pab .detalhe { margin-top: 0.15rem; font-size: 0.8rem; color: var(--tinta-2); }
+
+/* O estado é a única coisa que o fiscal procura numa lista destas. */
+.estado {
+  flex-shrink: 0;
+  align-self: center;
+  padding: 0.25rem 0.45rem;
+  font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  border-radius: 2px;
+}
+.estado-SUBMETIDO    { background: var(--hivis-claro); color: #6B4B00; }
+.estado-APROVADO,
+.estado-EM_BETONAGEM { background: var(--ddn-claro); color: var(--ddn-esc); }
+.estado-BETONADO,
+.estado-FCQ_FECHADA  { background: #EAE8E3; color: var(--tinta-2); }
+.estado-REJEITADO,
+.estado-ANULADO      { background: var(--ferro-claro); color: var(--ferro); }
+
+/* Formulário de uma linha só, para o que não merece secção própria. */
+.forma-curta { margin-bottom: 0.5rem; }
+.forma-curta .btn { margin-top: 0.75rem; }
+
+.opcionais {
+  margin-top: 1.25rem;
+  padding: 0 0.85rem 0.85rem;
+  border: 1px solid var(--linha);
+  border-radius: var(--r);
+}
+.opcionais legend {
+  padding: 0 0.4rem;
+  font-size: 0.75rem;
+  color: var(--tinta-2);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+select {
+  display: block;
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.6rem 0.75rem;
+  font: inherit;
+  color: var(--marcacao);
+  background: var(--papel);
+  border: 1.5px solid var(--linha-forte);
+  border-radius: var(--r);
+}
+select:focus-visible { outline: 3px solid var(--marcacao); outline-offset: 1px; }
 
 /* O erro é para ser lido, não para ser ignorado: fica no fluxo, com contraste,
    e mostra a mensagem que veio — não uma reescrita simpática dela. */

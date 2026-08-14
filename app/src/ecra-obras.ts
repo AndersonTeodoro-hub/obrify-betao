@@ -10,61 +10,80 @@
 // Nenhuma tabela do domínio aceita INSERT de papel nenhum. Se um dia este
 // ecrã conseguir escrever sem passar pelo rpc, é incidente.
 
-import { betonagens } from './supabase'
+import { criarObra, lerObras, mensagemDeErro, type Obra } from './dominio'
 import { sair, type UtilizadorDeDominio } from './sessao'
 
-type Obra = {
-  id: string
-  codigo: string
-  designacao: string
-  ativa: boolean
-}
+/** Quem pode criar obras. O servidor recusa na mesma; isto só evita mostrar
+ *  um formulário que ia dar erro. */
+const PODE_CRIAR_OBRA = ['ADMIN', 'DIRETOR_QUALIDADE']
 
-async function lerObras(): Promise<Obra[]> {
-  const { data, error } = await betonagens()
-    .from('obra')
-    .select('id, codigo, designacao, ativa')
-    .order('codigo')
-  if (error) throw error
-  return (data ?? []) as Obra[]
-}
+// A lista é construída com o DOM e não com innerHTML: os valores vêm da base de
+// dados, foram escritos por pessoas, e interpolá-los em HTML seria injecção à
+// espera de acontecer. textContent não interpreta nada.
+function desenharLista(
+  destino: HTMLElement,
+  obras: Obra[],
+  aoAbrirObra: (obra: Obra) => void,
+): void {
+  destino.replaceChildren()
 
-async function criarObra(codigo: string, designacao: string): Promise<void> {
-  const { error } = await betonagens().rpc('criar_obra', {
-    p_codigo: codigo,
-    p_designacao: designacao,
-  })
-  if (error) throw error
-}
-
-function desenharLista(destino: HTMLElement, obras: Obra[]): void {
   if (obras.length === 0) {
-    destino.innerHTML = `<p class="vazio">Nenhuma obra visível para esta conta.</p>`
+    const vazio = document.createElement('li')
+    vazio.className = 'vazio'
+    vazio.textContent = 'Nenhuma obra visível para esta conta.'
+    destino.append(vazio)
     return
   }
-  destino.innerHTML = obras
-    .map(
-      (obra) => `
-        <li class="obra">
-          <span class="mono codigo">${obra.codigo}</span>
-          <span class="designacao">${obra.designacao}</span>
-          ${obra.ativa ? '' : '<span class="inactiva">inactiva</span>'}
-        </li>`,
-    )
-    .join('')
+
+  for (const obra of obras) {
+    const codigo = document.createElement('span')
+    codigo.className = 'mono codigo'
+    codigo.textContent = obra.codigo
+
+    const designacao = document.createElement('span')
+    designacao.className = 'designacao'
+    designacao.textContent = obra.designacao
+
+    const botao = document.createElement('button')
+    botao.type = 'button'
+    botao.className = 'linha-botao'
+    botao.append(codigo, designacao)
+
+    if (!obra.ativa) {
+      const inactiva = document.createElement('span')
+      inactiva.className = 'inactiva'
+      inactiva.textContent = 'inactiva'
+      botao.append(inactiva)
+    }
+
+    const seta = document.createElement('span')
+    seta.className = 'seta'
+    seta.setAttribute('aria-hidden', 'true')
+    seta.textContent = '›'
+    botao.append(seta)
+
+    botao.addEventListener('click', () => aoAbrirObra(obra))
+
+    const item = document.createElement('li')
+    item.append(botao)
+    destino.append(item)
+  }
 }
 
 export function montarEcraObras(
   destino: HTMLElement,
   utilizador: UtilizadorDeDominio,
   aoSair: () => void,
+  aoAbrirObra: (obra: Obra) => void,
 ): void {
+  const podeCriar = PODE_CRIAR_OBRA.includes(utilizador.perfil)
+
   destino.innerHTML = `
     <section class="ecra">
       <header class="topo">
         <div>
-          <div class="nome">${utilizador.nome}</div>
-          <div class="mono perfil">${utilizador.perfil}</div>
+          <div class="nome"></div>
+          <div class="mono perfil"></div>
         </div>
         <button id="botao-sair" class="btn btn-s" type="button">Sair</button>
       </header>
@@ -72,8 +91,10 @@ export function montarEcraObras(
       <h2>Obras</h2>
       <ul id="lista-obras" class="lista"><li class="vazio">A carregar…</li></ul>
 
-      <h2>Criar obra</h2>
-      <form id="forma-obra" novalidate>
+      ${
+        podeCriar
+          ? `<h2>Criar obra</h2>
+      <form id="forma-obra">
         <label for="codigo">Código</label>
         <input id="codigo" class="mono" name="codigo" type="text" required
                autocomplete="off" placeholder="2602">
@@ -83,26 +104,27 @@ export function montarEcraObras(
                autocomplete="off" placeholder="Marina Sul — Bloco B">
 
         <button id="botao-criar" class="btn btn-p" type="submit">Criar obra</button>
-      </form>
+      </form>`
+          : ''
+      }
       <p id="erro-obras" class="erro" role="alert" hidden></p>
     </section>
   `
 
+  destino.querySelector<HTMLDivElement>('.topo .nome')!.textContent = utilizador.nome
+  destino.querySelector<HTMLDivElement>('.topo .perfil')!.textContent = utilizador.perfil
+
   const lista = destino.querySelector<HTMLUListElement>('#lista-obras')!
-  const forma = destino.querySelector<HTMLFormElement>('#forma-obra')!
-  const botaoCriar = destino.querySelector<HTMLButtonElement>('#botao-criar')!
-  const codigo = destino.querySelector<HTMLInputElement>('#codigo')!
-  const designacao = destino.querySelector<HTMLInputElement>('#designacao')!
   const erro = destino.querySelector<HTMLParagraphElement>('#erro-obras')!
 
   const mostrarErro = (causa: unknown): void => {
-    erro.textContent = causa instanceof Error ? causa.message : String(causa)
+    erro.textContent = mensagemDeErro(causa)
     erro.hidden = false
   }
 
   const recarregar = (): void => {
     lerObras()
-      .then((obras) => desenharLista(lista, obras))
+      .then((obras) => desenharLista(lista, obras, aoAbrirObra))
       .catch(mostrarErro)
   }
 
@@ -110,23 +132,30 @@ export function montarEcraObras(
     sair().then(aoSair).catch(mostrarErro)
   })
 
-  forma.addEventListener('submit', (evento) => {
-    evento.preventDefault()
-    erro.hidden = true
-    botaoCriar.disabled = true
-    botaoCriar.textContent = 'A criar…'
+  const forma = destino.querySelector<HTMLFormElement>('#forma-obra')
+  if (forma !== null) {
+    const botaoCriar = destino.querySelector<HTMLButtonElement>('#botao-criar')!
+    const codigo = destino.querySelector<HTMLInputElement>('#codigo')!
+    const designacao = destino.querySelector<HTMLInputElement>('#designacao')!
 
-    criarObra(codigo.value.trim(), designacao.value.trim())
-      .then(() => {
-        forma.reset()
-        recarregar()
-      })
-      .catch(mostrarErro)
-      .finally(() => {
-        botaoCriar.disabled = false
-        botaoCriar.textContent = 'Criar obra'
-      })
-  })
+    forma.addEventListener('submit', (evento) => {
+      evento.preventDefault()
+      erro.hidden = true
+      botaoCriar.disabled = true
+      botaoCriar.textContent = 'A criar…'
+
+      criarObra(codigo.value.trim(), designacao.value.trim())
+        .then(() => {
+          forma.reset()
+          recarregar()
+        })
+        .catch(mostrarErro)
+        .finally(() => {
+          botaoCriar.disabled = false
+          botaoCriar.textContent = 'Criar obra'
+        })
+    })
+  }
 
   recarregar()
 }

@@ -4,6 +4,7 @@
 // organização, através de betonagens.registar_utilizador. Não há auto-inscrição
 // porque uma assinatura de FCQ não vale nada se não se souber quem assinou.
 
+import { mensagemDeErro } from './dominio'
 import { entrar } from './sessao'
 
 export function montarEcraEntrar(destino: HTMLElement, aoEntrar: () => void): void {
@@ -11,7 +12,7 @@ export function montarEcraEntrar(destino: HTMLElement, aoEntrar: () => void): vo
     <section class="ecra">
       <h1>Obrify Betão</h1>
       <p class="sub">Controlo de betonagens · DDN</p>
-      <form id="forma-entrar" novalidate>
+      <form id="forma-entrar">
         <label for="email">Email</label>
         <input id="email" name="email" type="email" autocomplete="username"
                inputmode="email" required>
@@ -43,7 +44,7 @@ export function montarEcraEntrar(destino: HTMLElement, aoEntrar: () => void): vo
       .catch((causa: unknown) => {
         // O erro aparece tal como veio. Nada de "credenciais inválidas" genérico
         // por cima de um problema de rede ou de configuração.
-        erro.textContent = causa instanceof Error ? causa.message : String(causa)
+        erro.textContent = mensagemDeErro(causa)
         erro.hidden = false
         botao.disabled = false
         botao.textContent = 'Entrar'

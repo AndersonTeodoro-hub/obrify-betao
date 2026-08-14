@@ -85,7 +85,9 @@ migracao_esperada(ficheiro, ordem) as (values
   ('0010_seed_modelo_icr033.sql',        10),
   ('0011_indices_chave_estrangeira.sql', 11),
   ('0012_excecao_momento_monotono.sql',  12),
-  ('0013_privilegios_betonagens_priv.sql', 13)
+  ('0013_privilegios_betonagens_priv.sql', 13),
+  ('0014_agora.sql',                       14),
+  ('0015_omissoes_execute.sql',            15)
 ),
 -- O que TEM de estar concedido. Sem estas listas o verificador só sabe ver
 -- privilégios a mais e é cego a revogações: uma retirada silenciosa só se
@@ -108,6 +110,12 @@ funcao_de_servico(proname) as (values
 -- as que a RLS e a vista fcq_seccao_estado executam em nome de quem consulta
 funcao_auxiliar_rls(proname) as (values
   ('utilizador_atual'),('organizacao_atual'),('obras_visiveis'),('itens_hash')
+),
+-- Não são serviço de domínio nem auxiliares da RLS, mas o cliente tem de as
+-- poder chamar. agora() devolve o relógio do servidor para o dispositivo medir
+-- a sua deriva antes de declarar um momento.
+funcao_utilitaria(proname) as (values
+  ('agora')
 ),
 migracao_em_falta as (
   select e.ficheiro
@@ -222,13 +230,14 @@ v(verificacao, ok, detalhe) as (
                   '21 legíveis; migracao e sequencia_dispositivo invisíveis')
 
   union all
-  select 'authenticated executa exactamente as funções de serviço e as auxiliares da RLS',
+  select 'authenticated executa exactamente as funções de serviço, auxiliares e utilitárias',
          not exists (
            select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
             where n.nspname in ('betonagens','betonagens_priv') and p.prokind = 'f'
               and has_function_privilege('authenticated', p.oid, 'EXECUTE')
                   <> (p.proname in (select f.proname from funcao_de_servico f)
-                   or p.proname in (select f.proname from funcao_auxiliar_rls f))),
+                   or p.proname in (select f.proname from funcao_auxiliar_rls f)
+                   or p.proname in (select f.proname from funcao_utilitaria f))),
          coalesce((select string_agg(n.nspname || '.' || p.proname ||
                           case when has_function_privilege('authenticated', p.oid, 'EXECUTE')
                                then ' (A MAIS)' else ' (EM FALTA)' end, ', ')
@@ -236,8 +245,9 @@ v(verificacao, ok, detalhe) as (
                     where n.nspname in ('betonagens','betonagens_priv') and p.prokind = 'f'
                       and has_function_privilege('authenticated', p.oid, 'EXECUTE')
                           <> (p.proname in (select f.proname from funcao_de_servico f)
-                           or p.proname in (select f.proname from funcao_auxiliar_rls f))),
-                  '20 de serviço + 4 auxiliares')
+                           or p.proname in (select f.proname from funcao_auxiliar_rls f)
+                           or p.proname in (select f.proname from funcao_utilitaria f))),
+                  '20 de serviço + 4 auxiliares + 1 utilitária')
 
   union all
   select 'service_role executa exactamente o que as Edge Functions chamam',
@@ -256,9 +266,13 @@ v(verificacao, ok, detalhe) as (
                   'registar_guia e registar_ficheiro, mais nenhuma')
 
   union all
-  -- A generalização do achado da consulta B. Apanha o caso inteiro em vez do
-  -- exemplar, e é o travão para o que o alter default privileges da 0013 não
-  -- alcança: uma função criada por outro papel que não betonagens_servico.
+  -- A peça central da defesa contra o EXECUTE a PUBLIC, e não uma verificação
+  -- entre outras. As omissões de pg_default_acl não funcionam nesta base — ver
+  -- o cabeçalho da 0015 —, portanto a garantia é convenção mais esta linha:
+  -- toda a migração que cria funções termina com o revoke ao public, e se
+  -- alguém esquecer, é aqui que aparece, com o nome da função.
+  -- O anon herda tudo o que for concedido a PUBLIC, por isso testá-lo cobre os
+  -- dois casos: a concessão explícita e a de fábrica.
   select 'nenhuma função é executável por anon',
          not exists (
            select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -312,10 +326,11 @@ v(verificacao, ok, detalhe) as (
                   'todas')
 
   union all
-  -- exigir_perfil, distancia_m, nome_impresso, identidade_externa e
-  -- derivar_ano_civil são puras: não lêem tabela nenhuma — a última só mexe no
-  -- tuplo que está a ser inserido — por isso não são SECURITY DEFINER. A lista
-  -- está aqui à vista em vez de se pôr SECURITY DEFINER onde não faz falta.
+  -- exigir_perfil, distancia_m, nome_impresso, identidade_externa,
+  -- derivar_ano_civil e agora são puras: não lêem tabela nenhuma — a quinta só
+  -- mexe no tuplo que está a ser inserido e a última só devolve now() — por
+  -- isso não são SECURITY DEFINER. A lista está aqui à vista em vez de se pôr
+  -- SECURITY DEFINER onde não faz falta.
   select 'funções que acedem a tabelas são SECURITY DEFINER',
          not exists (
            select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -323,15 +338,33 @@ v(verificacao, ok, detalhe) as (
               and p.prokind = 'f'
               and not p.prosecdef
               and p.proname not in ('exigir_perfil','distancia_m','nome_impresso',
-                                    'identidade_externa','derivar_ano_civil')),
+                                    'identidade_externa','derivar_ano_civil','agora')),
          coalesce((select string_agg(p.proname, ', ')
                      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                     where n.nspname in ('betonagens','betonagens_priv')
                       and p.prokind = 'f'
                       and not p.prosecdef
                       and p.proname not in ('exigir_perfil','distancia_m','nome_impresso',
-                                    'identidade_externa','derivar_ano_civil')),
+                                    'identidade_externa','derivar_ano_civil','agora')),
                   'todas')
+
+  union all
+  -- A irmã desta linha para tabelas existe desde a primeira escrita do
+  -- verificador. Para funções nunca existiu, e foi essa ausência que tornou
+  -- invisível, durante catorze migrações, a hipótese de haver SECURITY DEFINER
+  -- a correr com um dono que não era o previsto. Não havia — mas não havia
+  -- forma de o saber.
+  select 'todas as funções pertencem a betonagens_servico',
+         not exists (
+           select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+            where n.nspname in ('betonagens','betonagens_priv') and p.prokind = 'f'
+              and p.proowner <> 'betonagens_servico'::regrole),
+         coalesce((select string_agg(n.nspname || '.' || p.proname ||
+                          ' (dono: ' || p.proowner::regrole::text || ')', ', ')
+                     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                    where n.nspname in ('betonagens','betonagens_priv') and p.prokind = 'f'
+                      and p.proowner <> 'betonagens_servico'::regrole),
+                  '45 funções, todas do papel de serviço')
 
   union all
   select 'criar_organizacao não é executável por ninguém',
