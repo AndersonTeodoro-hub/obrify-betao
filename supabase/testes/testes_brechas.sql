@@ -402,7 +402,8 @@ begin
       (select valor from ctx where chave='frente1'),
       'Laje L0 - painel A', 86.00, 'C30/37',
       (current_date - 3), (current_date - 2),
-      now() - interval '50 hours', 'XC4(P)', 22, 'S4') p
+      now() - interval '50 hours', 'XC4(P)', 22, 'S4',
+      p_processo_betonagem => 'Bomba') p
   $q$, 'F11 · PAB 1 submetido');
 
   r := r || pg_temp.corre($q$
@@ -555,7 +556,8 @@ begin
       (select valor from ctx where chave='frente1'),
       'Pilares P9 a P14', 18.50, 'C35/45',
       (current_date - 3), (current_date - 2),
-      now() - interval '50 hours', 'XC4(P)', 22, 'S3') p
+      now() - interval '50 hours', 'XC4(P)', 22, 'S3',
+      p_processo_betonagem => 'Balde') p
   $q$, 'A3.3a · PAB 2 submetido na mesma frente');
 
   r := r || pg_temp.atira($q$
@@ -638,14 +640,16 @@ begin
     select betonagens.submeter_pab(
       (select valor from ctx where chave='obra1'),
       (select valor from ctx where chave='frente1'),
-      '', 40.00, 'C30/37', current_date, current_date, now() - interval '1 hour')
+      '', 40.00, 'C30/37', current_date, current_date, now() - interval '1 hour',
+      p_processo_betonagem => 'Bomba')
   $q$, 'PT422', 'B2.1 · PAB sem elemento é recusado');
 
   r := r || pg_temp.atira($q$
     select betonagens.submeter_pab(
       (select valor from ctx where chave='obra1'),
       (select valor from ctx where chave='frente1'),
-      'Sapatas S12 a S15', 0, 'C30/37', current_date, current_date, now() - interval '1 hour')
+      'Sapatas S12 a S15', 0, 'C30/37', current_date, current_date, now() - interval '1 hour',
+      p_processo_betonagem => 'Bomba')
   $q$, 'PT422', 'B2.2 · PAB com volume zero é recusado');
 
   r := r || pg_temp.atira($q$
@@ -950,7 +954,8 @@ begin
       (select valor from ctx where chave='obra2'),
       (select valor from ctx where chave='frente2'),
       'Muro M4', 12.00, 'C30/37',
-      (current_date - 3), (current_date - 2), now() - interval '50 hours') p
+      (current_date - 3), (current_date - 2), now() - interval '50 hours',
+      p_processo_betonagem => 'Descarga directa') p
   $q$, 'B5.2b · PAB submetido na segunda obra');
 
   perform pg_temp.actor(k_fiscal);

@@ -87,7 +87,8 @@ migracao_esperada(ficheiro, ordem) as (values
   ('0012_excecao_momento_monotono.sql',  12),
   ('0013_privilegios_betonagens_priv.sql', 13),
   ('0014_agora.sql',                       14),
-  ('0015_omissoes_execute.sql',            15)
+  ('0015_omissoes_execute.sql',            15),
+  ('0016_pab_modelo_ddn.sql',              16)
 ),
 -- O que TEM de estar concedido. Sem estas listas o verificador só sabe ver
 -- privilégios a mais e é cego a revogações: uma retirada silenciosa só se
