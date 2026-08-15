@@ -303,6 +303,56 @@ input:focus-visible { outline: 3px solid var(--marcacao); outline-offset: 1px; }
 /* Enquanto o servidor não confirmar, nada nesta lista se toca. */
 .a-gravar { opacity: 0.6; pointer-events: none; }
 
+.btn-assinar {
+  flex-shrink: 0;
+  min-height: 2.25rem;
+  padding: 0 0.85rem;
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--papel);
+  background: var(--marcacao);
+  border: 0;
+  border-radius: 2px;
+  cursor: pointer;
+}
+.btn-assinar:focus-visible { outline: 3px solid var(--marcacao); outline-offset: 2px; }
+.btn-assinar[disabled] {
+  color: var(--tinta-2);
+  background: transparent;
+  border: 1.5px solid var(--linha-forte);
+  cursor: default;
+}
+
+/* Quem assinou e quando. A assinatura guarda o hash dos itens que cobre — se
+   um item mudar depois, a vista dá em_vigor falso e isto muda de cor sozinho,
+   sem ninguém lhe tocar. */
+.assinatura-seccao {
+  padding: 0.5rem 0.85rem;
+  font-size: 0.8rem;
+  color: var(--ddn-esc);
+  background: var(--ddn-claro);
+  border-bottom: 1px solid var(--linha);
+}
+.assinatura-seccao.caida {
+  color: var(--ferro);
+  background: var(--ferro-claro);
+  font-weight: 700;
+}
+
+.rodape-ficha {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--linha);
+}
+.rodape-estado { display: flex; align-items: center; gap: 0.5rem; flex: 1; }
+.rodape-etiqueta { font-size: 0.8rem; color: var(--tinta-2); }
+.rodape-ficha .btn { width: 100%; margin: 0; }
+
 select {
   display: block;
   width: 100%;

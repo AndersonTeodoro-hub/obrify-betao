@@ -17,6 +17,8 @@
 // critério já marcado ficam inertes.
 
 import {
+  aprovarPab,
+  assinarSeccao,
   lerEstadoSeccoes,
   lerFicha,
   lerItensInspecao,
@@ -25,6 +27,7 @@ import {
   mensagemDeErro,
   NOME_DA_SECCAO,
   SECCOES_PRE_BETONAGEM,
+  type EstadoPab,
   type EstadoSeccao,
   type Ficha,
   type ItemFicha,
@@ -36,8 +39,10 @@ import {
 } from './dominio'
 import type { UtilizadorDeDominio } from './sessao'
 
-/** Quem pode marcar, segundo betonagens.marcar_item_fcq. */
-const PODE_MARCAR = ['FISCALIZACAO', 'DIRETOR_QUALIDADE']
+/** Os três RPC deste ecrã — marcar_item_fcq, assinar_seccao_fcq e aprovar_pab —
+ *  exigem exactamente estes dois perfis. Esconder o que o servidor recusaria é
+ *  cortesia; quem contar com isto para segurança conta com a coisa errada. */
+const PERFIS_DE_INSPECAO = ['FISCALIZACAO', 'DIRETOR_QUALIDADE']
 
 /** O mínimo que a anotação de uma não conformidade tem de ter, do lado do
  *  servidor: constraint fcq_item_nc_anotado e verificação na função. */
@@ -77,19 +82,29 @@ async function carregar(pabId: string): Promise<Dados> {
 // Com o DOM e textContent: os critérios vêm do mapa de campos do impresso e as
 // anotações foram escritas por pessoas.
 
-function desenharCabecalhoSeccao(seccao: SeccaoFcq, estado: EstadoSeccao | undefined): HTMLElement {
+/** Hora do servidor, escrita na hora local de quem lê. Se vier ilegível,
+ *  mostra-se o que veio em vez de inventar uma data. */
+function horaLocal(iso: string | null): string {
+  if (iso === null) return 'hora desconhecida'
+  const quando = new Date(iso)
+  if (!Number.isFinite(quando.getTime())) return iso
+  return quando.toLocaleString('pt-PT', { dateStyle: 'short', timeStyle: 'short' })
+}
+
+function desenharCabecalhoSeccao(
+  seccao: SeccaoFcq,
+  estado: EstadoSeccao | undefined,
+  podeInspecionar: boolean,
+  aoAssinar: (seccao: SeccaoFcq) => void,
+): DocumentFragment {
   const preenchidos = estado?.itens_preenchidos ?? 0
   const total = estado?.linhas_da_seccao ?? 0
   const naoConformes = estado?.itens_nao_conformes ?? 0
+  const completa = total > 0 && preenchidos === total
 
   const ponto = document.createElement('span')
   ponto.className =
-    'ponto ' +
-    (naoConformes > 0
-      ? 'ponto-nc'
-      : total > 0 && preenchidos === total
-        ? 'ponto-ok'
-        : 'ponto-pendente')
+    'ponto ' + (naoConformes > 0 ? 'ponto-nc' : completa ? 'ponto-ok' : 'ponto-pendente')
 
   const nome = document.createElement('span')
   nome.className = 'seccao-nome'
@@ -103,7 +118,36 @@ function desenharCabecalhoSeccao(seccao: SeccaoFcq, estado: EstadoSeccao | undef
   const cabecalho = document.createElement('div')
   cabecalho.className = 'seccao-cabecalho'
   cabecalho.append(ponto, nome, contagem)
-  return cabecalho
+
+  // O botão só aparece enquanto a secção não estiver assinada, e só fica activo
+  // com a secção completa. Reassinar está fora deste âmbito; o servidor recusa
+  // uma segunda assinatura sem motivo escrito, e diz porquê.
+  if (podeInspecionar && estado?.assinada !== true) {
+    const assinar = document.createElement('button')
+    assinar.type = 'button'
+    assinar.className = 'btn-assinar'
+    assinar.textContent = 'Assinar'
+    assinar.disabled = !completa
+    assinar.title = completa
+      ? `Assinar a secção ${NOME_DA_SECCAO[seccao]}`
+      : 'Não se assina uma secção incompleta.'
+    assinar.addEventListener('click', () => aoAssinar(seccao))
+    cabecalho.append(assinar)
+  }
+
+  const fragmento = document.createDocumentFragment()
+  fragmento.append(cabecalho)
+
+  if (estado?.assinada === true) {
+    const assinatura = document.createElement('div')
+    assinatura.className = estado.em_vigor ? 'assinatura-seccao' : 'assinatura-seccao caida'
+    assinatura.textContent = estado.em_vigor
+      ? `Assinada por ${estado.nome_impresso ?? '—'} · ${horaLocal(estado.assinado_em)}`
+      : `Assinada por ${estado.nome_impresso ?? '—'} · ${horaLocal(estado.assinado_em)} — já não cobre os itens actuais.`
+    fragmento.append(assinatura)
+  }
+
+  return fragmento
 }
 
 function desenharCriterio(
@@ -167,10 +211,11 @@ export function montarEcraFicha(
   utilizador: UtilizadorDeDominio,
   aoVoltar: () => void,
 ): void {
-  const podeMarcar = PODE_MARCAR.includes(utilizador.perfil)
+  const podeInspecionar = PERFIS_DE_INSPECAO.includes(utilizador.perfil)
 
   let fichaId: string | null = null
   let ocupado = false
+  let estadoPab: EstadoPab = pab.estado
 
   destino.innerHTML = `
     <section class="ecra">
@@ -188,10 +233,18 @@ export function montarEcraFicha(
         </p>
       </header>
 
-      ${podeMarcar ? '' : `<p class="nota-perfil">O perfil ${utilizador.perfil} não preenche a ficha.</p>`}
+      ${podeInspecionar ? '' : `<p class="nota-perfil">O perfil ${utilizador.perfil} não preenche a ficha.</p>`}
 
       <div id="seccoes"><p class="vazio">A carregar…</p></div>
       <p id="erro-ficha" class="erro" role="alert" hidden></p>
+
+      <footer id="rodape-ficha" class="rodape-ficha">
+        <div class="rodape-estado">
+          <span class="rodape-etiqueta">Estado do PAB</span>
+          <span id="estado-pab" class="estado"></span>
+        </div>
+        <button id="botao-aprovar" class="btn btn-p" type="button" hidden>Aprovar betonagem</button>
+      </footer>
     </section>
   `
 
@@ -203,6 +256,9 @@ export function montarEcraFicha(
 
   const seccoes = destino.querySelector<HTMLDivElement>('#seccoes')!
   const erro = destino.querySelector<HTMLParagraphElement>('#erro-ficha')!
+  const rodape = destino.querySelector<HTMLElement>('#rodape-ficha')!
+  const estadoPabEl = destino.querySelector<HTMLSpanElement>('#estado-pab')!
+  const botaoAprovar = destino.querySelector<HTMLButtonElement>('#botao-aprovar')!
 
   const mostrarErro = (causa: unknown): void => {
     erro.textContent = mensagemDeErro(causa)
@@ -211,20 +267,58 @@ export function montarEcraFicha(
 
   voltar.addEventListener('click', aoVoltar)
 
-  const enviar = (linha: LinhaFicha, valor: ValorFcq, anotacao: string | null): void => {
-    if (fichaId === null) return
+  /** Enquanto o servidor não responder, nada nesta ficha se toca. O erro
+   *  aparece na caixa; nunca é engolido. */
+  function executar<T>(accao: () => Promise<T>, depois: (resultado: T) => void): void {
+    if (ocupado) return
     ocupado = true
     erro.hidden = true
     seccoes.classList.add('a-gravar')
+    rodape.classList.add('a-gravar')
 
-    marcarItem(fichaId, linha.codigo, valor, anotacao)
-      .then(recarregar)
+    accao()
+      .then(depois)
       .catch(mostrarErro)
       .finally(() => {
         ocupado = false
         seccoes.classList.remove('a-gravar')
+        rodape.classList.remove('a-gravar')
       })
   }
+
+  const enviar = (linha: LinhaFicha, valor: ValorFcq, anotacao: string | null): void => {
+    const id = fichaId
+    if (id === null) return
+    executar(() => marcarItem(id, linha.codigo, valor, anotacao), recarregar)
+  }
+
+  const assinar = (seccao: SeccaoFcq): void => {
+    const id = fichaId
+    if (id === null) return
+    executar(() => assinarSeccao(id, seccao), recarregar)
+  }
+
+  const desenharRodape = (): void => {
+    estadoPabEl.textContent = estadoPab
+    estadoPabEl.className = `estado estado-${estadoPab}`
+    botaoAprovar.hidden = !podeInspecionar || estadoPab !== 'SUBMETIDO'
+  }
+
+  // O botão fica activo mesmo com o gate por cumprir: é o servidor que decide,
+  // e é a frase dele que aparece. Um botão desactivado por conta do cliente
+  // esconderia a razão da recusa — que é precisamente o que interessa ler.
+  botaoAprovar.addEventListener('click', () => {
+    executar(
+      () => aprovarPab(pab.id),
+      (estado) => {
+        estadoPab = estado
+        desenharRodape()
+        recarregar()
+      },
+    )
+  })
+
+  desenharRodape()
 
   const escolher = (linha: LinhaFicha, valor: ValorFcq, bloco: HTMLElement): void => {
     if (ocupado) return
@@ -294,10 +388,14 @@ export function montarEcraFicha(
 
       const bloco = document.createElement('section')
       bloco.className = 'seccao'
-      bloco.append(desenharCabecalhoSeccao(seccao, dados.estados.get(seccao)))
+      bloco.append(
+        desenharCabecalhoSeccao(seccao, dados.estados.get(seccao), podeInspecionar, assinar),
+      )
 
       for (const linha of daSeccao) {
-        bloco.append(desenharCriterio(linha, dados.itens.get(linha.codigo), podeMarcar, escolher))
+        bloco.append(
+          desenharCriterio(linha, dados.itens.get(linha.codigo), podeInspecionar, escolher),
+        )
       }
       seccoes.append(bloco)
     }

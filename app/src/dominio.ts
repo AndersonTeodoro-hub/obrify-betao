@@ -136,6 +136,19 @@ export type EstadoSeccao = {
   linhas_da_seccao: number
   itens_preenchidos: number
   itens_nao_conformes: number
+  assinada: boolean
+  nome_impresso: string | null
+  /** Relógio do servidor, não o declarado pelo dispositivo. */
+  assinado_em: string | null
+  /**
+   * A assinatura ainda cobre os itens que existem agora.
+   *
+   * Não é uma bandeira que alguém escreve: a vista compara o hash dos itens
+   * guardado na assinatura com o hash recalculado no momento da leitura. Se um
+   * item for corrigido depois de assinado, isto passa a falso sozinho — e o
+   * gate de aprovação recusa com a mesma verificação.
+   */
+  em_vigor: boolean
 }
 
 export type NovoPab = {
@@ -395,7 +408,7 @@ export async function lerItensInspecao(fcqId: string): Promise<ItemFicha[]> {
 export async function lerEstadoSeccoes(fcqId: string): Promise<EstadoSeccao[]> {
   const { data, error } = await betonagens()
     .from('fcq_seccao_estado')
-    .select('seccao, linhas_da_seccao, itens_preenchidos, itens_nao_conformes')
+    .select('seccao, linhas_da_seccao, itens_preenchidos, itens_nao_conformes, assinada, nome_impresso, assinado_em, em_vigor')
     .eq('fcq_id', fcqId)
     .eq('coluna', 'insp')
   if (error) throw error
@@ -436,4 +449,63 @@ export async function marcarItem(
     p_anotacao: anotacao,
   })
   if (error) throw error
+}
+
+/**
+ * Assina uma secção na coluna de inspeção.
+ *
+ * A assinatura guarda o hash dos itens que cobre. É por isso que não é um
+ * carimbo: se um item for corrigido depois, o hash deixa de bater e a
+ * assinatura cai — sem ninguém lhe tocar, e sem ninguém a poder apagar.
+ *
+ * Não se passa motivo de reassinatura: reassinar está fora deste âmbito, e uma
+ * segunda tentativa há-de ser recusada pelo servidor com a razão escrita.
+ */
+export async function assinarSeccao(fcqId: string, seccao: SeccaoFcq): Promise<void> {
+  const momento = await agoraDeclarado()
+  const dispositivo = proximoRegisto()
+
+  const { error } = await betonagens().rpc('assinar_seccao_fcq', {
+    p_fcq_id: fcqId,
+    p_seccao: seccao,
+    p_coluna: 'insp',
+    p_momento_declarado: momento,
+    p_dispositivo_id: dispositivo.id,
+    p_sequencia: dispositivo.sequencia,
+  })
+  if (error) throw error
+}
+
+/**
+ * Aprova o PAB, e devolve o estado que o servidor confirmou.
+ *
+ * O gate vive todo do lado do servidor — secções assinadas, assinaturas em
+ * vigor, cronologia, não conformidades por reinspecionar, R6 na frente — e não
+ * se repete aqui. Duplicá-lo no cliente daria duas versões da regra, e a
+ * primeira a divergir seria a que o utilizador vê. Quando o gate recusa, o que
+ * aparece no ecrã é a frase do servidor.
+ *
+ * Não se passa justificação de R6: levantar a R6 está fora deste âmbito, e sem
+ * ela o servidor recusa e diz porquê.
+ */
+export async function aprovarPab(pabId: string): Promise<EstadoPab> {
+  const momento = await agoraDeclarado()
+  const dispositivo = proximoRegisto()
+
+  const { data, error } = await betonagens().rpc('aprovar_pab', {
+    p_pab_id: pabId,
+    p_momento_declarado: momento,
+    p_dispositivo_id: dispositivo.id,
+    p_sequencia: dispositivo.sequencia,
+  })
+  if (error) throw error
+
+  const estado = (data as Pab | null)?.estado
+  if (estado === undefined) {
+    throw new Error(
+      'A aprovação não devolveu o PAB, e sem isso não há como confirmar em que estado ficou. ' +
+        'Recarregue antes de repetir.',
+    )
+  }
+  return estado
 }
