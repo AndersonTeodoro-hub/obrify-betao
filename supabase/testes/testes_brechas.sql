@@ -1146,6 +1146,88 @@ begin
     '2', 'L06 · o empreiteiro com duas obras atribuídas vê as duas', k_empr);
 
   -- ══════════════════════════════════════════════════════════════════════════
+  -- atualizar_obra · o cabeçalho do impresso corrige-se, a identidade não
+  --
+  -- Fica no fim de propósito: altera a obra 1, e assim nada do que vem antes
+  -- depende do que aqui se muda. O elo que este bloco escreve é depois
+  -- recalculado por G01, junto com todos os outros.
+  -- ══════════════════════════════════════════════════════════════════════════
+
+  -- O código da obra não se muda, e o que o impede não é uma validação que
+  -- alguém possa esquecer numa revisão futura: é um parâmetro que não existe.
+  -- Uma validação prova-se com um teste que a exercite; uma ausência prova-se
+  -- assim, contra o catálogo.
+  r := r || pg_temp.vale($q$
+    select (count(*) = 0)::text
+      from pg_proc p
+     cross join lateral unnest(coalesce(p.proargnames, '{}'::text[])) a(nome)
+     where p.oid = 'betonagens.atualizar_obra(uuid,text,text,text,text)'::regprocedure
+       and a.nome = 'p_codigo' $q$,
+    'true', 'O01 · atualizar_obra não tem parâmetro p_codigo');
+
+  perform pg_temp.actor(k_empr);
+
+  r := r || pg_temp.atira($q$
+    select betonagens.atualizar_obra(
+      (select valor from ctx where chave='obra1'), 'Tentativa do empreiteiro')
+  $q$, 'PT403', 'O02 · empreiteiro não corrige o cabeçalho da obra');
+
+  perform pg_temp.actor(k_admin);
+
+  r := r || pg_temp.atira($q$
+    select betonagens.atualizar_obra(
+      (select valor from ctx where chave='obra1'), '  ')
+  $q$, 'PT422', 'O03 · designação em branco é recusada');
+
+  -- A suite inteira vive numa organização só, e sem um «fora» não há como
+  -- testar o isolamento entre organizações. Esta vizinha existe para isso e
+  -- para mais nada: cria-se, cria-se-lhe uma obra com o administrador dela, e
+  -- volta-se ao administrador de sempre.
+  r := r || pg_temp.corre($q$
+    select betonagens.criar_organizacao(
+      'TESTE-VIZINHA', 'Organização vizinha', 'Sara Vizinha',
+      'vizinha@teste.local', '10000000-0000-4000-8000-000000000009');
+    select set_config('request.jwt.claims',
+      json_build_object('sub', '10000000-0000-4000-8000-000000000009')::text, true);
+    select set_config('request.jwt.claim.sub',
+      '10000000-0000-4000-8000-000000000009', true);
+    insert into ctx select 'obra_vizinha', o.id from betonagens.criar_obra(
+      '9001', 'Obra da organização vizinha') o
+  $q$, 'O04 · organização vizinha com obra própria');
+
+  perform pg_temp.actor(k_admin);
+
+  r := r || pg_temp.atira($q$
+    select betonagens.atualizar_obra(
+      (select valor from ctx where chave='obra_vizinha'), 'Não devia passar')
+  $q$, 'PT403', 'O05 · obra de outra organização é recusada');
+
+  r := r || pg_temp.corre($q$
+    select betonagens.atualizar_obra(
+      (select valor from ctx where chave='obra1'),
+      'Marina Sul - Bloco B',
+      'Palmares - Comp. Empreendimentos Turísticos, SA',
+      'Ferreira Construção, S.A.',
+      'DDN - Engenharia e Fiscalização')
+  $q$, 'O06 · cabeçalho do impresso corrigido');
+
+  -- Uma correcção de cabeçalho não desaparece. O gatilho obra_ledger grava
+  -- {antes, depois}, e o que se verifica aqui é precisamente isso: o valor
+  -- antigo continua legível ao lado do novo.
+  r := r || pg_temp.vale($q$
+    select format('%s -> %s',
+             coalesce(l.dados -> 'antes' ->> 'dono_obra', 'nulo'),
+             coalesce(l.dados -> 'depois' ->> 'dono_obra', 'nulo'))
+      from betonagens.ledger l
+     where l.entidade = 'obra'
+       and l.acao = 'UPDATE'
+       and l.entidade_id = (select valor from ctx where chave='obra1')::text
+     order by l.seq desc
+     limit 1 $q$,
+    'nulo -> Palmares - Comp. Empreendimentos Turísticos, SA',
+    'O07 · a correcção ficou no ledger, com o antes e o depois');
+
+  -- ══════════════════════════════════════════════════════════════════════════
   -- Ledger · a cadeia tem de fechar
   -- ══════════════════════════════════════════════════════════════════════════
 

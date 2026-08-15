@@ -367,7 +367,16 @@ v(verificacao, ok, detalhe) as (
                      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                     where n.nspname in ('betonagens','betonagens_priv') and p.prokind = 'f'
                       and p.proowner <> 'betonagens_servico'::regrole),
-                  '45 funções, todas do papel de serviço')
+                  -- Contado, não escrito à mão. O número que aqui estava foi
+                  -- fixado quando eram 45 e ficou a dizer 45 enquanto as
+                  -- migrações acrescentavam funções — dava a impressão de ser
+                  -- prova quando era legenda. O universo é o mesmo do not
+                  -- exists acima, para o número dizer respeito exactamente ao
+                  -- que foi verificado.
+                  (select count(*) || ' funções, todas do papel de serviço'
+                     from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                    where n.nspname in ('betonagens','betonagens_priv')
+                      and p.prokind = 'f'))
 
   union all
   select 'criar_organizacao não é executável por ninguém',
