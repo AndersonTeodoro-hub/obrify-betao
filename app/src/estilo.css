@@ -23,6 +23,11 @@
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/* O atributo hidden só esconde por causa de uma regra do browser, que qualquer
+   display do autor apaga — e o .btn tem um. Esta linha devolve ao hidden o
+   significado que o HTML lhe dá, em toda a aplicação. */
+[hidden] { display: none !important; }
+
 html { -webkit-text-size-adjust: 100%; }
 
 body {
