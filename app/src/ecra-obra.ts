@@ -9,6 +9,7 @@
 // PAB. O checklist dessa ficha é a fase C.
 
 import {
+  atualizarObra,
   criarFrente,
   lerFrentes,
   lerPabs,
@@ -30,6 +31,10 @@ const PODE_SUBMETER_PAB = ['EMPREITEIRO', 'FISCALIZACAO', 'DIRETOR_QUALIDADE']
 /** Quem pode preencher a ficha, segundo betonagens.marcar_item_fcq. É a
  *  fiscalização que inspecciona — o empreiteiro pede, não se auto-verifica. */
 const PODE_MARCAR_FICHA = ['FISCALIZACAO', 'DIRETOR_QUALIDADE']
+
+/** Quem pode corrigir o cabeçalho do impresso, segundo
+ *  betonagens.atualizar_obra. Os mesmos que criam obras. */
+const PODE_EDITAR_OBRA = ['ADMIN', 'DIRETOR_QUALIDADE']
 
 function dataISO(dias: number): string {
   const d = new Date()
@@ -66,6 +71,37 @@ function lerNumero(texto: string): Numero {
   if (limpo === '') return { estado: 'vazio' }
   const valor = Number(limpo)
   return Number.isFinite(valor) ? { estado: 'ok', valor } : { estado: 'invalido' }
+}
+
+/**
+ * O cabeçalho de identificação do impresso, nos quatro campos marcados com
+ * data-obra. Serve o formulário e volta a correr depois de o cabeçalho ser
+ * corrigido.
+ *
+ * Por textContent: são valores de base de dados escritos por pessoas.
+ */
+function escreverCabecalhoDaObra(raiz: HTMLElement, obra: Obra): void {
+  for (const alvo of raiz.querySelectorAll<HTMLElement>('[data-obra]')) {
+    const qual = alvo.dataset.obra
+    const valor =
+      qual === 'obra'
+        ? `Obra n.º ${obra.codigo} — ${obra.designacao}`
+        : qual === 'dono_obra'
+          ? obra.dono_obra
+          : qual === 'empreiteiro'
+            ? obra.empreiteiro
+            : obra.fiscalizacao
+    alvo.textContent = valor ?? '—'
+    alvo.classList.toggle('por-indicar', valor === null)
+  }
+}
+
+/** A janela prevista, quando existir. Só a hora de início já diz alguma coisa;
+ *  só a de fim, sem início, não diz — e por isso não se imprime sozinha. */
+function horas(pab: Pab): string {
+  if (pab.hora_prevista_inicio === null) return ''
+  const fim = pab.hora_prevista_fim === null ? '' : `–${pab.hora_prevista_fim}`
+  return ` ${pab.hora_prevista_inicio}${fim}`
 }
 
 // ── desenho ─────────────────────────────────────────────────────────────────
@@ -123,37 +159,42 @@ function desenharPabs(
   const designacaoDaFrente = new Map(frentes.map((f) => [f.id, f.designacao]))
 
   for (const pab of pabs) {
-    const numero = document.createElement('span')
-    numero.className = 'mono numero-pab'
-    numero.textContent = String(pab.numero)
+    // A referência do documento, como numa capa de processo: PAB e o número.
+    const referencia = document.createElement('span')
+    referencia.className = 'mono ref-doc'
+    referencia.textContent = `PAB ${pab.numero}`
 
-    const elemento = document.createElement('div')
-    elemento.className = 'elemento'
-    elemento.textContent = pab.elemento
+    const titulo = document.createElement('span')
+    titulo.className = 'titulo-doc'
+    titulo.textContent = pab.elemento
 
-    // classe · exposição · consistência · dmáx — só o que existir
-    const especificacao = [
+    // frente · classe · volume · processo — só o que existir
+    const sub = document.createElement('span')
+    sub.className = 'sub-doc'
+    sub.textContent = [
+      designacaoDaFrente.get(pab.frente_id) ?? 'frente desconhecida',
       pab.classe_betao,
-      pab.classe_exposicao,
-      pab.classe_consistencia,
-      pab.dmax_agregado_mm === null ? null : `Dmáx ${pab.dmax_agregado_mm} mm`,
+      `${pab.volume_previsto_m3} m³`,
+      pab.processo_betonagem,
     ]
       .filter((parte): parte is string => parte !== null && parte !== '')
       .join(' · ')
 
-    const detalhe = document.createElement('div')
-    detalhe.className = 'detalhe'
-    detalhe.textContent =
-      `${designacaoDaFrente.get(pab.frente_id) ?? 'frente desconhecida'} · ` +
-      `${especificacao} · ${pab.volume_previsto_m3} m³ · prevista ${pab.data_prevista}`
-
-    const texto = document.createElement('div')
-    texto.className = 'texto-pab'
-    texto.append(elemento, detalhe)
+    const corpo = document.createElement('span')
+    corpo.className = 'corpo-doc'
+    corpo.append(titulo, sub)
 
     const estado = document.createElement('span')
     estado.className = `estado estado-${pab.estado}`
     estado.textContent = pab.estado.replace('_', ' ')
+
+    const data = document.createElement('span')
+    data.className = 'mono data-doc'
+    data.textContent = `${pab.data_prevista}${horas(pab)}`
+
+    const lado = document.createElement('span')
+    lado.className = 'lado-doc'
+    lado.append(estado, data)
 
     const item = document.createElement('li')
 
@@ -168,13 +209,13 @@ function desenharPabs(
 
       const botao = document.createElement('button')
       botao.type = 'button'
-      botao.className = 'linha-botao pab'
-      botao.append(numero, texto, estado, seta)
+      botao.className = 'linha-doc'
+      botao.append(referencia, corpo, lado, seta)
       botao.addEventListener('click', () => aoAbrirFicha(pab))
       item.append(botao)
     } else {
-      item.className = 'pab'
-      item.append(numero, texto, estado)
+      item.className = 'linha-doc'
+      item.append(referencia, corpo, lado)
     }
 
     destino.append(item)
@@ -207,6 +248,7 @@ export function montarEcraObra(
   const podeCriarFrente = PODE_CRIAR_FRENTE.includes(utilizador.perfil)
   const podeSubmeter = PODE_SUBMETER_PAB.includes(utilizador.perfil)
   const podeAbrirFicha = PODE_MARCAR_FICHA.includes(utilizador.perfil)
+  const podeEditarObra = PODE_EDITAR_OBRA.includes(utilizador.perfil)
 
   destino.innerHTML = `
     <section class="ecra">
@@ -216,6 +258,42 @@ export function montarEcraObra(
         <div class="mono codigo-obra"></div>
         <h1 class="designacao-obra"></h1>
       </header>
+
+      ${
+        podeEditarObra
+          ? `<details id="editar-obra" class="editor-obra">
+        <summary>Cabeçalho do impresso</summary>
+        <form id="forma-editar-obra">
+          <p class="nota-grupo">
+            É o que aparece no topo de cada pedido de betonagem desta obra.
+            O código não se altera: é a identidade da obra.
+          </p>
+
+          <label for="edit-designacao">Designação</label>
+          <input id="edit-designacao" name="edit-designacao" type="text" required
+                 autocomplete="off" minlength="3">
+
+          <label for="edit-dono-obra">Dono de obra</label>
+          <input id="edit-dono-obra" name="edit-dono-obra" type="text" autocomplete="off"
+                 placeholder="Palmares — Comp. Empreendimentos Turísticos, SA">
+
+          <label for="edit-empreiteiro">Adjudicatário</label>
+          <input id="edit-empreiteiro" name="edit-empreiteiro" type="text" autocomplete="off"
+                 placeholder="Ferreira Construção, S.A.">
+
+          <label for="edit-fiscalizacao">Fiscalização</label>
+          <input id="edit-fiscalizacao" name="edit-fiscalizacao" type="text" autocomplete="off"
+                 placeholder="DDN — Engenharia e Fiscalização">
+
+          <p class="nota-grupo">
+            Um campo deixado em branco fica em branco: isto substitui os quatro valores.
+          </p>
+
+          <button id="botao-editar-obra" class="btn btn-p" type="submit">Gravar cabeçalho</button>
+        </form>
+      </details>`
+          : ''
+      }
 
       <h2>Frentes</h2>
       <ul id="lista-frentes" class="lista"><li class="vazio">A carregar…</li></ul>
@@ -240,45 +318,152 @@ export function montarEcraObra(
       <p id="sem-frentes" class="nota-perfil" hidden>
         Não há frentes nesta obra. Um pedido tem sempre uma frente — cria uma primeiro.
       </p>
-      <form id="forma-pab" hidden>
-        <label for="frente-pab">Frente</label>
-        <select id="frente-pab" name="frente-pab" required></select>
+      <form id="forma-pab" class="doc doc-preenchimento" hidden>
+        <div class="doc-titulo">
+          <h1>Pedido de autorização de betonagem</h1>
+          <span class="estado estado-novo">por submeter</span>
+        </div>
 
-        <label for="elemento">Peças a betonar</label>
-        <input id="elemento" name="elemento" type="text" required autocomplete="off"
-               placeholder="Sapatas S12 a S15" minlength="3">
+        <div class="doc-ident">
+          <div class="campo"><span class="etiqueta">Dono de obra</span
+            ><span class="valor" data-obra="dono_obra"></span></div>
+          <div class="campo"><span class="etiqueta">Obra / empreitada</span
+            ><span class="valor" data-obra="obra"></span></div>
+          <div class="campo"><span class="etiqueta">Adjudicatário</span
+            ><span class="valor" data-obra="empreiteiro"></span></div>
+          <div class="campo"><span class="etiqueta">Fiscalização</span
+            ><span class="valor" data-obra="fiscalizacao"></span></div>
+        </div>
 
-        <label for="volume">Volume previsto (m³)</label>
-        <input id="volume" class="mono" name="volume" type="text" required
-               inputmode="decimal" autocomplete="off" placeholder="40,00">
+        <div class="doc-numero">
+          <span>Pedido de autorização de betonagem n.º</span>
+          <span class="numero-por-atribuir">atribuído ao submeter</span>
+        </div>
 
-        <label for="classe-betao">Classe de betão</label>
-        <input id="classe-betao" class="mono" name="classe-betao" type="text" required
-               autocomplete="off" placeholder="C30/37" minlength="3">
+        <section class="doc-bloco">
+          <h3>Localização</h3>
+          <div class="campos">
+            <div class="linha-campos linha-2">
+              <div class="campo">
+                <label for="frente-pab">Parte da obra</label>
+                <select id="frente-pab" name="frente-pab" required></select>
+              </div>
+              <div class="campo">
+                <label for="referencia-desenho">Ref.ª do desenho <span class="op">opcional</span></label>
+                <input id="referencia-desenho" class="mono" name="referencia-desenho" type="text"
+                       autocomplete="off" placeholder="EST-04-P2">
+              </div>
+            </div>
+            <div class="campo campo-largo">
+              <label for="elemento">Peças a betonar</label>
+              <textarea id="elemento" name="elemento" rows="3" required minlength="3"
+                        placeholder="Pilares P2c P4c P1c&#10;Muro M3c do eixo 12c ao eixo 15c"></textarea>
+            </div>
+          </div>
+        </section>
 
-        <label for="data-pedido">Data do pedido</label>
-        <input id="data-pedido" class="mono" name="data-pedido" type="date" required>
+        <section class="doc-bloco">
+          <h3>Elementos técnicos</h3>
+          <div class="campos">
+            <div class="linha-campos linha-4">
+              <div class="campo">
+                <label for="classe-betao">Identificação do betão</label>
+                <input id="classe-betao" class="mono" name="classe-betao" type="text" required
+                       autocomplete="off" placeholder="C30/37" minlength="3">
+              </div>
+              <div class="campo">
+                <label for="classe-exposicao">Classe <span class="op">opcional</span></label>
+                <input id="classe-exposicao" class="mono" name="classe-exposicao" type="text"
+                       autocomplete="off" placeholder="XC4(P)">
+              </div>
+              <div class="campo">
+                <label for="classe-consistencia">Slump <span class="op">opcional</span></label>
+                <input id="classe-consistencia" class="mono" name="classe-consistencia" type="text"
+                       autocomplete="off" placeholder="S4">
+              </div>
+              <div class="campo">
+                <label for="volume">Vol. prev. (m³)</label>
+                <input id="volume" class="mono" name="volume" type="text" required
+                       inputmode="decimal" autocomplete="off" placeholder="40,00">
+              </div>
+            </div>
+            <div class="linha-campos linha-3">
+              <div class="campo">
+                <label for="dmax">Dmáx do agregado (mm) <span class="op">opcional</span></label>
+                <input id="dmax" class="mono" name="dmax" type="text" inputmode="numeric"
+                       autocomplete="off" placeholder="22">
+              </div>
+              <div class="campo">
+                <label for="processo-betonagem">Processo de betonagem</label>
+                <input id="processo-betonagem" name="processo-betonagem" type="text" required
+                       autocomplete="off" placeholder="Bomba / Balde / Descarga directa"
+                       minlength="3">
+              </div>
+              <div class="campo">
+                <label for="processo-cura">Processo de cura <span class="op">opcional</span></label>
+                <input id="processo-cura" name="processo-cura" type="text" autocomplete="off"
+                       placeholder="Rega / manta / cura química">
+              </div>
+            </div>
+          </div>
+        </section>
 
-        <label for="data-prevista">Data prevista da betonagem</label>
-        <input id="data-prevista" class="mono" name="data-prevista" type="date" required>
+        <section class="doc-bloco">
+          <h3>Data prevista para</h3>
+          <div class="campos">
+            <div class="linha-campos linha-4">
+              <div class="campo">
+                <label for="data-pedido">Data do pedido</label>
+                <input id="data-pedido" class="mono" name="data-pedido" type="date" required>
+              </div>
+              <div class="campo">
+                <label for="data-prevista">Betonagem</label>
+                <input id="data-prevista" class="mono" name="data-prevista" type="date" required>
+              </div>
+              <div class="campo">
+                <label for="hora-inicio">Hora de início <span class="op">opcional</span></label>
+                <input id="hora-inicio" class="mono" name="hora-inicio" type="time">
+              </div>
+              <div class="campo">
+                <label for="hora-fim">Hora de fim <span class="op">opcional</span></label>
+                <input id="hora-fim" class="mono" name="hora-fim" type="time">
+              </div>
+            </div>
+            <div class="linha-campos linha-2">
+              <div class="campo">
+                <label for="descofragem">Descofragem <span class="op">opcional</span></label>
+                <input id="descofragem" class="mono" name="descofragem" type="date">
+                <label class="caixa" for="descofragem-na">
+                  <input id="descofragem-na" name="descofragem-na" type="checkbox">
+                  Não se aplica
+                </label>
+              </div>
+              <div class="campo">
+                <label for="escoramento">Retirada do escoramento <span class="op">opcional</span></label>
+                <input id="escoramento" class="mono" name="escoramento" type="date">
+                <label class="caixa" for="escoramento-na">
+                  <input id="escoramento-na" name="escoramento-na" type="checkbox">
+                  Não se aplica
+                </label>
+              </div>
+            </div>
+          </div>
+        </section>
 
-        <fieldset class="opcionais">
-          <legend>Opcional</legend>
+        <section class="doc-bloco">
+          <h3>Observações</h3>
+          <div class="campos">
+            <div class="campo campo-largo">
+              <label for="observacoes">Observações <span class="op">opcional</span></label>
+              <textarea id="observacoes" name="observacoes" rows="3"
+                        placeholder="O que a fiscalização precisa de saber antes de vir ao local."></textarea>
+            </div>
+          </div>
+        </section>
 
-          <label for="classe-exposicao">Classe de exposição</label>
-          <input id="classe-exposicao" class="mono" name="classe-exposicao" type="text"
-                 autocomplete="off" placeholder="XC4(P)">
-
-          <label for="classe-consistencia">Classe de consistência</label>
-          <input id="classe-consistencia" class="mono" name="classe-consistencia" type="text"
-                 autocomplete="off" placeholder="S4">
-
-          <label for="dmax">Dmáx do agregado (mm)</label>
-          <input id="dmax" class="mono" name="dmax" type="text" inputmode="numeric"
-                 autocomplete="off" placeholder="22">
-        </fieldset>
-
-        <button id="botao-submeter" class="btn btn-p" type="submit">Submeter pedido</button>
+        <div class="doc-accao">
+          <button id="botao-submeter" class="btn btn-p" type="submit">Submeter pedido</button>
+        </div>
       </form>`
           : `<p class="nota-perfil">O perfil ${utilizador.perfil} não submete pedidos de betonagem.</p>`
       }
@@ -320,6 +505,56 @@ export function montarEcraObra(
 
   destino.querySelector<HTMLButtonElement>('#botao-voltar')!.addEventListener('click', aoVoltar)
 
+  const formaEditar = destino.querySelector<HTMLFormElement>('#forma-editar-obra')
+  if (formaEditar !== null) {
+    const botao = destino.querySelector<HTMLButtonElement>('#botao-editar-obra')!
+    const designacao = destino.querySelector<HTMLInputElement>('#edit-designacao')!
+    const donoObra = destino.querySelector<HTMLInputElement>('#edit-dono-obra')!
+    const empreiteiro = destino.querySelector<HTMLInputElement>('#edit-empreiteiro')!
+    const fiscalizacao = destino.querySelector<HTMLInputElement>('#edit-fiscalizacao')!
+
+    // O formulário mostra o estado actual, porque o servidor SUBSTITUI os
+    // quatro campos: enviar um formulário meio vazio apagaria o resto.
+    designacao.value = obra.designacao
+    donoObra.value = obra.dono_obra ?? ''
+    empreiteiro.value = obra.empreiteiro ?? ''
+    fiscalizacao.value = obra.fiscalizacao ?? ''
+
+    formaEditar.addEventListener('submit', (evento) => {
+      evento.preventDefault()
+      erro.hidden = true
+      botao.disabled = true
+      botao.textContent = 'A gravar…'
+
+      atualizarObra(
+        obra.id,
+        designacao.value.trim(),
+        textoOuNulo(donoObra.value),
+        textoOuNulo(empreiteiro.value),
+        textoOuNulo(fiscalizacao.value),
+      )
+        .then((actualizada) => {
+          // A mesma referência que o main.ts guarda no estado da vista. Escrever
+          // aqui mantém coerente o que se vê ao voltar e ao entrar no PAB, sem
+          // enfiar mais um callback pelo main.ts acima.
+          obra.designacao = actualizada.designacao
+          obra.dono_obra = actualizada.dono_obra
+          obra.empreiteiro = actualizada.empreiteiro
+          obra.fiscalizacao = actualizada.fiscalizacao
+
+          destino.querySelector<HTMLHeadingElement>('.designacao-obra')!.textContent =
+            obra.designacao
+          escreverCabecalhoDaObra(destino, obra)
+          destino.querySelector<HTMLDetailsElement>('#editar-obra')!.open = false
+        })
+        .catch(mostrarErro)
+        .finally(() => {
+          botao.disabled = false
+          botao.textContent = 'Gravar cabeçalho'
+        })
+    })
+  }
+
   const formaFrente = destino.querySelector<HTMLFormElement>('#forma-frente')
   if (formaFrente !== null) {
     const botao = destino.querySelector<HTMLButtonElement>('#botao-criar-frente')!
@@ -346,7 +581,7 @@ export function montarEcraObra(
 
   if (formaPab !== null && selectFrente !== null) {
     const botao = destino.querySelector<HTMLButtonElement>('#botao-submeter')!
-    const elemento = destino.querySelector<HTMLInputElement>('#elemento')!
+    const elemento = destino.querySelector<HTMLTextAreaElement>('#elemento')!
     const volume = destino.querySelector<HTMLInputElement>('#volume')!
     const classeBetao = destino.querySelector<HTMLInputElement>('#classe-betao')!
     const dataPedido = destino.querySelector<HTMLInputElement>('#data-pedido')!
@@ -354,6 +589,46 @@ export function montarEcraObra(
     const classeExposicao = destino.querySelector<HTMLInputElement>('#classe-exposicao')!
     const classeConsistencia = destino.querySelector<HTMLInputElement>('#classe-consistencia')!
     const dmax = destino.querySelector<HTMLInputElement>('#dmax')!
+    const processoBetonagem = destino.querySelector<HTMLInputElement>('#processo-betonagem')!
+    const referenciaDesenho = destino.querySelector<HTMLInputElement>('#referencia-desenho')!
+    const processoCura = destino.querySelector<HTMLInputElement>('#processo-cura')!
+    const horaInicio = destino.querySelector<HTMLInputElement>('#hora-inicio')!
+    const horaFim = destino.querySelector<HTMLInputElement>('#hora-fim')!
+    const descofragem = destino.querySelector<HTMLInputElement>('#descofragem')!
+    const descofragemNA = destino.querySelector<HTMLInputElement>('#descofragem-na')!
+    const escoramento = destino.querySelector<HTMLInputElement>('#escoramento')!
+    const escoramentoNA = destino.querySelector<HTMLInputElement>('#escoramento-na')!
+    const observacoes = destino.querySelector<HTMLTextAreaElement>('#observacoes')!
+
+    escreverCabecalhoDaObra(formaPab, obra)
+
+    // «Não se aplica» e «tem data» excluem-se — é o que os checks da 0016
+    // impõem na tabela e o que o submeter_pab recusa com PT422. Marcar a caixa
+    // apaga a data à vista de quem a escreveu, em vez de a deitar fora em
+    // silêncio na leitura.
+    const ligarPar = (caixa: HTMLInputElement, data: HTMLInputElement): void => {
+      caixa.addEventListener('change', () => {
+        data.disabled = caixa.checked
+        if (caixa.checked) data.value = ''
+      })
+    }
+    ligarPar(descofragemNA, descofragem)
+    ligarPar(escoramentoNA, escoramento)
+
+    // As peças a betonar são uma descrição longa — «Pilares P2c P4c P1c Muro M3c
+    // do eixo 12c ao eixo 15c» é o caso normal, não a excepção. A caixa cresce
+    // com o que lá está em vez de esconder o texto atrás de uma barra.
+    // Deliberadamente com JS e não com field-sizing: content, que ainda não
+    // existe em todo o lado onde isto vai correr.
+    const crescerComTexto = (caixa: HTMLTextAreaElement): void => {
+      const ajustar = (): void => {
+        caixa.style.height = 'auto'
+        caixa.style.height = `${caixa.scrollHeight}px`
+      }
+      caixa.addEventListener('input', ajustar)
+    }
+    crescerComTexto(elemento)
+    crescerComTexto(observacoes)
 
     // Hoje e amanhã. A data prevista no futuro não é cosmética: R6 só bloqueia a
     // frente por um PAB aprovado cuja data prevista já passou e que não tem
@@ -396,10 +671,29 @@ export function montarEcraObra(
         classeExposicao: textoOuNulo(classeExposicao.value),
         classeConsistencia: textoOuNulo(classeConsistencia.value),
         dmaxAgregadoMm: dmaxLido.estado === 'ok' ? dmaxLido.valor : null,
+        referenciaDesenho: textoOuNulo(referenciaDesenho.value),
+        processoBetonagem: processoBetonagem.value.trim(),
+        processoCura: textoOuNulo(processoCura.value),
+        // O <input type="time"> devolve HH:MM ou string vazia, nunca lixo — não
+        // há aqui um Number('') à espera de acontecer.
+        horaPrevistaInicio: textoOuNulo(horaInicio.value),
+        horaPrevistaFim: textoOuNulo(horaFim.value),
+        // A data vem vazia quando a caixa está marcada, porque foi apagada
+        // quando ela foi marcada. Nada se descarta na leitura.
+        descofragemPrevista: textoOuNulo(descofragem.value),
+        descofragemAplicavel: !descofragemNA.checked,
+        escoramentoRetiradaPrevista: textoOuNulo(escoramento.value),
+        escoramentoAplicavel: !escoramentoNA.checked,
+        observacoes: textoOuNulo(observacoes.value),
       })
         .then(() => {
           elemento.value = ''
           volume.value = ''
+          referenciaDesenho.value = ''
+          observacoes.value = ''
+          // A altura foi crescida à mão; limpar o texto não a devolve.
+          elemento.style.height = ''
+          observacoes.style.height = ''
           recarregar()
         })
         .catch(mostrarErro)

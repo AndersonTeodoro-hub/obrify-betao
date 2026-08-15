@@ -103,6 +103,25 @@ export function montarEcraObras(
         <input id="designacao" name="designacao" type="text" required
                autocomplete="off" placeholder="Marina Sul — Bloco B">
 
+        <fieldset class="grupo">
+          <legend>Cabeçalho do impresso</legend>
+          <p class="nota-grupo">
+            É o que aparece no topo de cada pedido de betonagem desta obra.
+          </p>
+
+          <label for="dono-obra">Dono de obra</label>
+          <input id="dono-obra" name="dono-obra" type="text" autocomplete="off"
+                 placeholder="Palmares — Comp. Empreendimentos Turísticos, SA">
+
+          <label for="empreiteiro">Adjudicatário</label>
+          <input id="empreiteiro" name="empreiteiro" type="text" autocomplete="off"
+                 placeholder="Ferreira Construção, S.A.">
+
+          <label for="fiscalizacao">Fiscalização</label>
+          <input id="fiscalizacao" name="fiscalizacao" type="text" autocomplete="off"
+                 placeholder="DDN — Engenharia e Fiscalização">
+        </fieldset>
+
         <button id="botao-criar" class="btn btn-p" type="submit">Criar obra</button>
       </form>`
           : ''
@@ -137,6 +156,14 @@ export function montarEcraObras(
     const botaoCriar = destino.querySelector<HTMLButtonElement>('#botao-criar')!
     const codigo = destino.querySelector<HTMLInputElement>('#codigo')!
     const designacao = destino.querySelector<HTMLInputElement>('#designacao')!
+    const donoObra = destino.querySelector<HTMLInputElement>('#dono-obra')!
+    const empreiteiro = destino.querySelector<HTMLInputElement>('#empreiteiro')!
+    const fiscalizacao = destino.querySelector<HTMLInputElement>('#fiscalizacao')!
+
+    const textoOuNulo = (valor: string): string | null => {
+      const limpo = valor.trim()
+      return limpo === '' ? null : limpo
+    }
 
     forma.addEventListener('submit', (evento) => {
       evento.preventDefault()
@@ -144,7 +171,13 @@ export function montarEcraObras(
       botaoCriar.disabled = true
       botaoCriar.textContent = 'A criar…'
 
-      criarObra(codigo.value.trim(), designacao.value.trim())
+      criarObra(
+        codigo.value.trim(),
+        designacao.value.trim(),
+        textoOuNulo(donoObra.value),
+        textoOuNulo(empreiteiro.value),
+        textoOuNulo(fiscalizacao.value),
+      )
         .then(() => {
           forma.reset()
           recarregar()

@@ -53,6 +53,12 @@ export type Obra = {
   codigo: string
   designacao: string
   ativa: boolean
+  /** O cabeçalho do impresso: dono de obra, adjudicatário e fiscalização.
+   *  Existem na tabela desde a 0002 e o criar_obra sempre os aceitou — o que
+   *  não existia era quem lhos desse. Nulos nas obras criadas antes disto. */
+  dono_obra: string | null
+  empreiteiro: string | null
+  fiscalizacao: string | null
 }
 
 export type Frente = {
@@ -83,6 +89,30 @@ export type Pab = {
   data_pedido: string
   data_prevista: string
   estado: EstadoPab
+  // ── modelo DDN (migração 0016) ──
+  referencia_desenho: string | null
+  /** Obrigatório desde a 0016; nulo apenas nos PAB submetidos antes dela. */
+  processo_betonagem: string | null
+  processo_cura: string | null
+  hora_prevista_inicio: string | null
+  hora_prevista_fim: string | null
+  descofragem_prevista: string | null
+  /** Falso é o «N/A» do impresso: não se aplica. Distinto de data nula, que é
+   *  «não indicada» — e é por isso que são duas colunas e não uma. */
+  descofragem_aplicavel: boolean
+  escoramento_retirada_prevista: string | null
+  escoramento_aplicavel: boolean
+  // ── bloco da fiscalização e observações do impresso ──
+  // Relógios do servidor, não os declarados pelo dispositivo. Os nomes de quem
+  // submeteu, aprovou ou rejeitou não vêm aqui: seriam um embed para
+  // betonagens.utilizador, e isso é mais do que apresentação.
+  observacoes: string | null
+  submetido_em: string
+  aprovado_em: string | null
+  rejeitado_em: string | null
+  motivo_rejeicao: string | null
+  anulado_em: string | null
+  motivo_anulacao: string | null
 }
 
 // ── ficha I.CR.033 ──────────────────────────────────────────────────────────
@@ -162,6 +192,21 @@ export type NovoPab = {
   classeExposicao: string | null
   dmaxAgregadoMm: number | null
   classeConsistencia: string | null
+  // ── modelo DDN (migração 0016) ──
+  referenciaDesenho: string | null
+  /** Obrigatório: betonagens.submeter_pab recusa com PT422 sem ele. */
+  processoBetonagem: string
+  processoCura: string | null
+  /** HH:MM, como o <input type="time"> devolve. */
+  horaPrevistaInicio: string | null
+  horaPrevistaFim: string | null
+  descofragemPrevista: string | null
+  descofragemAplicavel: boolean
+  escoramentoRetiradaPrevista: string | null
+  escoramentoAplicavel: boolean
+  /** O bloco «Observações» do impresso. A coluna e o parâmetro existiam desde a
+   *  0003 e a 0008; o que faltava era o campo no ecrã. */
+  observacoes: string | null
 }
 
 // ── relógio ─────────────────────────────────────────────────────────────────
@@ -276,18 +321,70 @@ export async function agoraDeclarado(): Promise<string> {
 export async function lerObras(): Promise<Obra[]> {
   const { data, error } = await betonagens()
     .from('obra')
-    .select('id, codigo, designacao, ativa')
+    .select('id, codigo, designacao, ativa, dono_obra, empreiteiro, fiscalizacao')
     .order('codigo')
   if (error) throw error
   return (data ?? []) as Obra[]
 }
 
-export async function criarObra(codigo: string, designacao: string): Promise<void> {
+/**
+ * Cria a obra, com o cabeçalho do impresso.
+ *
+ * Os três últimos são o que aparece no topo de cada PAB: dono de obra,
+ * adjudicatário e fiscalização. São opcionais na função de serviço desde a
+ * 0008 — não os enviar era uma omissão do cliente, não uma regra.
+ */
+export async function criarObra(
+  codigo: string,
+  designacao: string,
+  donoObra: string | null,
+  empreiteiro: string | null,
+  fiscalizacao: string | null,
+): Promise<void> {
   const { error } = await betonagens().rpc('criar_obra', {
     p_codigo: codigo,
     p_designacao: designacao,
+    p_dono_obra: donoObra,
+    p_empreiteiro: empreiteiro,
+    p_fiscalizacao: fiscalizacao,
   })
   if (error) throw error
+}
+
+/**
+ * Corrige a designação e o cabeçalho do impresso, e devolve a obra como o
+ * servidor a deixou.
+ *
+ * SUBSTITUI, não funde: um campo enviado a nulo fica a nulo. Quem chamar tem de
+ * enviar o estado completo dos quatro — é o que o formulário faz, mostrando os
+ * valores actuais e devolvendo o que lá ficou.
+ *
+ * O código não entra: é a identidade da obra e a função nem sequer o aceita.
+ */
+export async function atualizarObra(
+  obraId: string,
+  designacao: string,
+  donoObra: string | null,
+  empreiteiro: string | null,
+  fiscalizacao: string | null,
+): Promise<Obra> {
+  const { data, error } = await betonagens().rpc('atualizar_obra', {
+    p_obra_id: obraId,
+    p_designacao: designacao,
+    p_dono_obra: donoObra,
+    p_empreiteiro: empreiteiro,
+    p_fiscalizacao: fiscalizacao,
+  })
+  if (error) throw error
+
+  const obra = data as Obra | null
+  if (obra === null) {
+    throw new Error(
+      'A actualização não devolveu a obra, e sem isso não há como confirmar o que ficou gravado. ' +
+        'Recarregue antes de repetir.',
+    )
+  }
+  return obra
 }
 
 // ── frentes ─────────────────────────────────────────────────────────────────
@@ -318,7 +415,7 @@ export async function criarFrente(obraId: string, designacao: string): Promise<v
 export async function lerPabs(obraId: string): Promise<Pab[]> {
   const { data, error } = await betonagens()
     .from('pab')
-    .select('id, numero, frente_id, elemento, volume_previsto_m3, classe_betao, classe_exposicao, dmax_agregado_mm, classe_consistencia, data_pedido, data_prevista, estado')
+    .select('id, numero, frente_id, elemento, volume_previsto_m3, classe_betao, classe_exposicao, dmax_agregado_mm, classe_consistencia, data_pedido, data_prevista, estado, referencia_desenho, processo_betonagem, processo_cura, hora_prevista_inicio, hora_prevista_fim, descofragem_prevista, descofragem_aplicavel, escoramento_retirada_prevista, escoramento_aplicavel, observacoes, submetido_em, aprovado_em, rejeitado_em, motivo_rejeicao, anulado_em, motivo_anulacao')
     .eq('obra_id', obraId)
     .order('numero', { ascending: false })
   if (error) throw error
@@ -344,6 +441,16 @@ export async function submeterPab(dados: NovoPab): Promise<void> {
     p_classe_exposicao: dados.classeExposicao,
     p_dmax_agregado_mm: dados.dmaxAgregadoMm,
     p_classe_consistencia: dados.classeConsistencia,
+    p_referencia_desenho: dados.referenciaDesenho,
+    p_processo_betonagem: dados.processoBetonagem,
+    p_processo_cura: dados.processoCura,
+    p_hora_prevista_inicio: dados.horaPrevistaInicio,
+    p_hora_prevista_fim: dados.horaPrevistaFim,
+    p_descofragem_prevista: dados.descofragemPrevista,
+    p_descofragem_aplicavel: dados.descofragemAplicavel,
+    p_escoramento_retirada_prevista: dados.escoramentoRetiradaPrevista,
+    p_escoramento_aplicavel: dados.escoramentoAplicavel,
+    p_observacoes: dados.observacoes,
   })
   if (error) throw error
 }

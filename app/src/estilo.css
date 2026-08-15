@@ -19,6 +19,10 @@
   --ferro-claro: #FBE7E2;
   --marcacao: #1F4FD8;
   --r: 3px;
+
+  /* Largura de folha do documento em desktop. 55rem = 880px, e a conta que a
+     escolhe está na @media do documento, lá em baixo. */
+  --doc-largura: 55rem;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -168,26 +172,9 @@ input:focus-visible { outline: 3px solid var(--marcacao); outline-offset: 1px; }
 
 /* ── pedidos de autorização de betonagem ─────────────────────────────────── */
 
-.pab { display: flex; align-items: flex-start; gap: 0.75rem; padding: 0.85rem; }
-.numero-pab {
-  flex-shrink: 0;
-  min-width: 2.25rem;
-  padding: 0.3rem 0.4rem;
-  font-weight: 700;
-  line-height: 1;
-  text-align: center;
-  color: #fff;
-  background: var(--tinta);
-  border-radius: 2px;
-}
-.texto-pab { flex: 1; min-width: 0; }
-.texto-pab .elemento { font-weight: 600; line-height: 1.25; }
-.texto-pab .detalhe { margin-top: 0.15rem; font-size: 0.8rem; color: var(--tinta-2); }
-
 /* O estado é a única coisa que o fiscal procura numa lista destas. */
 .estado {
   flex-shrink: 0;
-  align-self: center;
   padding: 0.25rem 0.45rem;
   font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
   font-size: 0.65rem;
@@ -203,18 +190,20 @@ input:focus-visible { outline: 3px solid var(--marcacao); outline-offset: 1px; }
 .estado-FCQ_FECHADA  { background: #EAE8E3; color: var(--tinta-2); }
 .estado-REJEITADO,
 .estado-ANULADO      { background: var(--ferro-claro); color: var(--ferro); }
+/* O documento ainda por submeter: existe no ecrã, não existe na base. */
+.estado-novo         { background: #EAE8E3; color: var(--tinta-2); }
 
 /* Formulário de uma linha só, para o que não merece secção própria. */
 .forma-curta { margin-bottom: 0.5rem; }
 .forma-curta .btn { margin-top: 0.75rem; }
 
-.opcionais {
+.grupo {
   margin-top: 1.25rem;
   padding: 0 0.85rem 0.85rem;
   border: 1px solid var(--linha);
   border-radius: var(--r);
 }
-.opcionais legend {
+.grupo legend {
   padding: 0 0.4rem;
   font-size: 0.75rem;
   color: var(--tinta-2);
@@ -222,24 +211,344 @@ input:focus-visible { outline: 3px solid var(--marcacao); outline-offset: 1px; }
   text-transform: uppercase;
 }
 
-/* ── ficha I.CR.033 ──────────────────────────────────────────────────────── */
+/* Marca o que não é obrigatório sem gritar. O contrário — marcar o obrigatório
+   com asterisco — obrigaria a explicar o asterisco em cada formulário. */
+.op {
+  margin-left: 0.35rem;
+  font-size: 0.7rem;
+  color: var(--linha-forte);
+  text-transform: lowercase;
+}
 
-.cabecalho-ficha { padding-bottom: 1rem; border-bottom: 1px solid var(--linha-forte); }
-.linha-ficha { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
-.numero-ficha { font-size: 1.35rem; font-weight: 700; }
-.elemento-ficha { margin-top: 0.35rem; font-weight: 600; }
-.sub-ficha { margin-top: 0.5rem; font-size: 0.78rem; color: var(--tinta-2); line-height: 1.5; }
+/* «Não se aplica» é uma afirmação do empreiteiro, não uma opção de interface:
+   marcá-la apaga a data à vista, porque as duas coisas excluem-se. */
+.caixa {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.75rem;
+  margin: 0.35rem 0 0;
+  color: var(--tinta);
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.caixa input[type="checkbox"] {
+  width: 1.35rem;
+  height: 1.35rem;
+  min-height: 0;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--ddn);
+}
+input[type="date"][disabled],
+input[type="time"][disabled] { background: #F1EFEB; color: var(--tinta-2); }
+
+.nota-grupo { margin: 0.5rem 0 0; font-size: 0.78rem; color: var(--tinta-2); line-height: 1.45; }
+
+/* Corrigir o cabeçalho não é uma tarefa do dia-a-dia: fica dobrado, com o
+   <details> nativo, e não rouba espaço a quem só vem ver os pedidos. */
+.editor-obra {
+  margin: 0 0 1.25rem;
+  border: 1px solid var(--linha);
+  border-radius: var(--r);
+  background: var(--papel);
+}
+.editor-obra > summary {
+  padding: 0.75rem 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tinta-2);
+  cursor: pointer;
+}
+.editor-obra > summary:focus-visible { outline: 3px solid var(--marcacao); outline-offset: -3px; }
+.editor-obra > form { padding: 0 0.85rem 0.85rem; border-top: 1px solid var(--linha); }
+
+/* ══ o documento ═════════════════════════════════════════════════════════════
+   O PAB em ecrã é o impresso, não um formulário vertical. A gramática vem do
+   QAS.150.04: título, identificação da obra em linhas de etiqueta e valor,
+   barra com o número do pedido, e depois blocos com dois níveis de título —
+   os menores em banda clara (Localização, Elementos Técnicos), os maiores em
+   banda cheia (FISCALIZAÇÃO, VERIFICAÇÕES). Tudo em caixas, como no papel.
+
+   Três larguras, e cada uma tem a sua secção mais abaixo:
+     até 34rem   · coluna estreita, etiqueta por cima do valor, um campo por linha
+     34 a 57rem  · coluna de 512px, etiqueta ao lado do valor, um campo por linha
+     57rem +     · folha de 880px, e os campos curtos voltam a partilhar linha
+   ═════════════════════════════════════════════════════════════════════════ */
+
+.doc {
+  background: var(--papel);
+  border: 1.5px solid var(--linha-forte);
+  border-radius: var(--r);
+  overflow: hidden;
+}
+
+.doc-titulo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.9rem 0.85rem;
+  border-bottom: 1.5px solid var(--linha-forte);
+}
+.doc-titulo h1 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.doc-ident { border-bottom: 1.5px solid var(--linha-forte); background: #FAF9F7; }
+
+/* A barra do número, como no impresso: ocupa a largura toda e o número é o
+   maior algarismo da página. É por ele que se procura o documento. */
+.doc-numero {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0.85rem;
+  background: #F1EFEB;
+  border-bottom: 1.5px solid var(--linha-forte);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tinta-2);
+}
+.valor-numero { font-size: 1.5rem; letter-spacing: 0; color: var(--tinta); }
+/* Em preenchimento o número ainda não existe: quem o atribui é o servidor, por
+   ordem dentro da obra. Dizê-lo é menos estranho do que um travessão. */
+.numero-por-atribuir {
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  color: var(--linha-forte);
+}
+
+.doc-bloco { border-bottom: 1px solid var(--linha-forte); }
+.doc-bloco:last-child { border-bottom: 0; }
+
+/* Título menor: o «Localização» do impresso — negrito, na linha, sem fundo
+   forte. */
+.doc-bloco > h3 {
+  padding: 0.5rem 0.85rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--tinta-2);
+  background: #FAF9F7;
+  border-bottom: 1px solid var(--linha);
+}
+
+/* Título maior: o «VERIFICAÇÕES» do impresso — barra a toda a largura. */
+.doc-barra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 0.85rem;
+  background: var(--tinta);
+  color: var(--papel);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.barra-lado { display: flex; align-items: center; gap: 0.6rem; font-size: 0.7rem; }
+
+.legenda-doc {
+  padding: 0.5rem 0.85rem;
+  font-size: 0.72rem;
+  color: var(--tinta-2);
+  background: #FAF9F7;
+  border-bottom: 1px solid var(--linha);
+}
+.legenda-doc b { color: var(--tinta); }
+
+/* ── campos: etiqueta e valor ─────────────────────────────────────────────── */
+
+.campo {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.15rem;
+  padding: 0.5rem 0.85rem;
+  border-bottom: 1px solid #EDEBE7;
+}
+/* O último traço de um bloco seria um traço a duplicar a moldura do bloco
+   seguinte. Vale para um campo solto e para todas as células da última linha. */
+.campos > .campo:last-child,
+.campos > :last-child > .campo,
+.doc-ident > .campo:last-child { border-bottom: 0; }
+
+.campo > .etiqueta,
+.campo > label {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--tinta-2);
+}
+/* pre-wrap e não normal: as peças a betonar são escritas em várias linhas
+   («Pilares P2c P4c P1c / Muro M3c do eixo 12c ao eixo 15c») e as quebras que
+   alguém escreveu são informação, não formatação. */
+.campo > .valor {
+  font-size: 0.92rem;
+  line-height: 1.35;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* Um item de grelha tem min-width: auto, o que o impede de encolher abaixo do
+   tamanho intrínseco do que tem dentro — e um <input> tem um tamanho
+   intrínseco grande. Sem isto, a coluna do valor empurra a grelha para fora do
+   documento e o .doc, que tem overflow: hidden, corta o que sobrou. Foi o que
+   deu «C30/3'» e controlos invisíveis à direita. */
+.campo > * { min-width: 0; }
+
+/* Um campo sem valor imprime um travessão, e em cinzento. No papel, um espaço
+   vazio e um campo que ninguém preencheu são indistinguíveis — é essa confusão
+   que a versão digital não herda. «N/A» é outra coisa: é uma afirmação, e
+   escreve-se a tinta normal. */
+.por-indicar { color: var(--linha-forte); }
+
+/* Em modo de preenchimento o campo do impresso passa a receber o controlo, sem
+   deixar de ser a mesma célula. */
+.campo input,
+.campo select,
+.campo textarea {
+  width: 100%;
+  min-height: 2.75rem;
+  margin: 0;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--linha-forte);
+  border-radius: 2px;
+}
+.campo textarea { min-height: 4.5rem; resize: vertical; }
+.campo .caixa { margin-top: 0.4rem; min-height: 2.25rem; }
+
+.doc-accao { padding: 0.85rem; background: #FAF9F7; }
+.doc-accao .btn { margin: 0; }
+
+/* ── linhas do impresso ───────────────────────────────────────────────────── */
+/* No papel os campos curtos partilham linha: «Identificação do Betão: C30/37
+   Classe: XC4  Slump: S5  Vol. Prev.: 15 m3». É essa densidade horizontal que
+   faz aquilo parecer um impresso e não um questionário.
+   Em coluna estreita cada campo fica na sua linha; na largura de folha voltam
+   a partilhá-la, e aí a etiqueta sobe para cima do valor — numa célula de
+   193px não há espaço para etiqueta ao lado. */
+.linha-campos { display: grid; grid-template-columns: 1fr; }
+
+@media (min-width: 34rem) {
+  .campo { grid-template-columns: 10rem 1fr; align-items: baseline; gap: 0.85rem; }
+  /* Um campo de texto longo ocupa a linha toda: a etiqueta sobe para cima dele
+     em vez de lhe roubar 10rem de largura. */
+  .campo-largo { grid-template-columns: 1fr; gap: 0.25rem; }
+}
+
+/* ── a folha ──────────────────────────────────────────────────────────────────
+   .ecra limita a aplicação a 34rem, o que está certo para telemóvel e para as
+   listas. Para o documento está errado: dentro de 512px, um impresso com
+   quatro campos por linha não existe — foi por isso que a tentativa anterior
+   de duas colunas cortava os controlos.
+
+   Aqui o documento sai do contentor por margem negativa e assume largura de
+   folha. A conta que escolhe 55rem = 880px:
+
+     linha de 4 campos → célula = 880/4 = 220px
+     menos o padding do campo (0.85rem × 2 = 27px) → 193px úteis
+     a etiqueta mais longa dessa linha, «Identificação do betão», mede ~158px
+     a 0.7rem em maiúsculas → cabe numa linha, com folga
+     e 193px chegam a um <input type="date"> com dd/mm/aaaa mais o ícone
+
+   A 800px a mesma célula dava 173px (a etiqueta ficava a 15px do limite) e a
+   760px partia-se em duas linhas. 880px fica dentro da banda do A4 em ecrã
+   com margem real, em vez de ficar à tangente.
+
+   O limiar é 57rem de ecrã e não 55rem: 880px de folha mais uma margem de
+   16px de cada lado. Abaixo disso o documento continua na coluna de 512px, um
+   campo por linha, exactamente como está hoje no telemóvel.
+   ═════════════════════════════════════════════════════════════════════════ */
+@media (min-width: 57rem) {
+  .doc {
+    width: var(--doc-largura);
+    margin-inline: calc((100% - var(--doc-largura)) / 2);
+  }
+
+  .linha-campos { grid-template-columns: repeat(var(--colunas), 1fr); }
+  .linha-2 { --colunas: 2; }
+  .linha-3 { --colunas: 3; }
+  .linha-4 { --colunas: 4; }
+
+  /* Numa célula de linha partilhada a etiqueta vai por cima: ao lado não cabe.
+     min-width: 0 pela mesma razão de sempre — um item de grelha não encolhe
+     abaixo do tamanho intrínseco do que tem dentro, e um <input> tem-no
+     grande. */
+  .linha-campos > .campo {
+    grid-template-columns: 1fr;
+    gap: 0.25rem;
+    min-width: 0;
+  }
+  .linha-campos > .campo + .campo { border-left: 1px solid #EDEBE7; }
+}
+
+/* ── lista de documentos ──────────────────────────────────────────────────── */
+
+.linha-doc {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 0.75rem;
+  align-items: center;
+  width: 100%;
+  padding: 0.7rem 0.85rem;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+button.linha-doc:hover { background: #F4F2EE; }
+button.linha-doc:focus-visible { outline: 3px solid var(--marcacao); outline-offset: -3px; }
+
+.ref-doc {
+  flex-shrink: 0;
+  padding: 0.2rem 0.4rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--tinta-2);
+  border: 1px solid var(--linha-forte);
+  border-radius: 2px;
+  white-space: nowrap;
+}
+.corpo-doc { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+.titulo-doc { font-weight: 600; font-size: 0.92rem; }
+.sub-doc { font-size: 0.78rem; color: var(--tinta-2); }
+.lado-doc { display: flex; flex-direction: column; align-items: flex-end; gap: 0.25rem; }
+.data-doc { font-size: 0.72rem; color: var(--tinta-2); white-space: nowrap; }
+
+@media (max-width: 34rem) {
+  .linha-doc { grid-template-columns: auto 1fr auto; row-gap: 0.4rem; }
+  .lado-doc { grid-column: 2 / 4; flex-direction: row; align-items: center; justify-content: flex-start; }
+}
+
+/* ── ficha I.CR.033 ──────────────────────────────────────────────────────── */
 
 .estado-RASCUNHO { background: var(--hivis-claro); color: #6B4B00; }
 .estado-EMITIDA  { background: var(--ddn-claro); color: var(--ddn-esc); }
 
-.seccao {
-  margin-top: 1.25rem;
-  background: var(--papel);
-  border: 1px solid var(--linha);
-  border-radius: var(--r);
-  overflow: hidden;
-}
+/* Dentro do documento as secções não são cartões soltos: são faixas da mesma
+   tabela de verificações, separadas por um traço. */
+.seccao { background: var(--papel); border-top: 1px solid var(--linha-forte); }
+.seccao:first-of-type { border-top: 0; }
 .seccao-cabecalho {
   display: flex;
   align-items: center;
@@ -350,9 +659,9 @@ input:focus-visible { outline: 3px solid var(--marcacao); outline-offset: 1px; }
   align-items: center;
   gap: 0.75rem;
   flex-wrap: wrap;
-  margin-top: 1.25rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--linha);
+  padding: 0.85rem;
+  background: #FAF9F7;
+  border-top: 1.5px solid var(--linha-forte);
 }
 .rodape-estado { display: flex; align-items: center; gap: 0.5rem; flex: 1; }
 .rodape-etiqueta { font-size: 0.8rem; color: var(--tinta-2); }

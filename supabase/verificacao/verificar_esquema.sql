@@ -88,7 +88,8 @@ migracao_esperada(ficheiro, ordem) as (values
   ('0013_privilegios_betonagens_priv.sql', 13),
   ('0014_agora.sql',                       14),
   ('0015_omissoes_execute.sql',            15),
-  ('0016_pab_modelo_ddn.sql',              16)
+  ('0016_pab_modelo_ddn.sql',              16),
+  ('0017_atualizar_obra.sql',              17)
 ),
 -- O que TEM de estar concedido. Sem estas listas o verificador só sabe ver
 -- privilégios a mais e é cego a revogações: uma retirada silenciosa só se
@@ -102,6 +103,7 @@ tabela_legivel(relname) as (values
 ),
 funcao_de_servico(proname) as (values
   ('anular_pab'),('aprovar_pab'),('assinar_seccao_fcq'),('atribuir_obra'),
+  ('atualizar_obra'),
   ('corrigir_guia'),('corrigir_item_fcq'),('criar_central'),('criar_frente'),
   ('criar_obra'),('definir_parametro'),('desativar_utilizador'),
   ('fechar_betonagem'),('marcar_item_fcq'),('registar_ficheiro'),
@@ -248,7 +250,7 @@ v(verificacao, ok, detalhe) as (
                           <> (p.proname in (select f.proname from funcao_de_servico f)
                            or p.proname in (select f.proname from funcao_auxiliar_rls f)
                            or p.proname in (select f.proname from funcao_utilitaria f))),
-                  '20 de serviço + 4 auxiliares + 1 utilitária')
+                  '21 de serviço + 4 auxiliares + 1 utilitária')
 
   union all
   select 'service_role executa exactamente o que as Edge Functions chamam',
