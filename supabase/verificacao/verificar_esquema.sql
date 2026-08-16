@@ -27,14 +27,15 @@ append_only as (
 estado as (
   select unnest(array[
     'organizacao','utilizador','obra','frente','central_betonagem',
-    'pab','fcq','modelo_impresso','fcq_linha'
+    'pab','fcq','modelo_impresso','fcq_linha','codigo_registo'
   ]) as relname
 ),
 com_ledger as (
   select unnest(array[
     'organizacao','utilizador','obra','frente','utilizador_obra',
     'central_betonagem','parametro','ficheiro','pab','guia_remessa',
-    'fcq','fcq_item','fcq_seccao_assinatura','fcq_versao','alerta','excecao'
+    'fcq','fcq_item','fcq_seccao_assinatura','fcq_versao','alerta','excecao',
+    'codigo_registo'
   ]) as relname
 ),
 -- Chaves estrangeiras deliberadamente sem índice próprio, com a razão. Como as
@@ -91,7 +92,8 @@ migracao_esperada(ficheiro, ordem) as (values
   ('0016_pab_modelo_ddn.sql',              16),
   ('0017_atualizar_obra.sql',              17),
   ('0018_storage_guias.sql',               18),
-  ('0019_gravar_guia_ordem.sql',           19)
+  ('0019_gravar_guia_ordem.sql',           19),
+  ('0020_acessos.sql',                     20)
 ),
 -- O que TEM de estar concedido. Sem estas listas o verificador só sabe ver
 -- privilégios a mais e é cego a revogações: uma retirada silenciosa só se
@@ -101,11 +103,12 @@ tabela_legivel(relname) as (values
   ('central_betonagem'),('parametro'),('ficheiro'),('pab'),('guia_remessa'),
   ('modelo_impresso'),('fcq_linha'),('fcq'),('fcq_item'),
   ('fcq_seccao_assinatura'),('fcq_versao'),('alerta'),('excecao'),
-  ('evento_saida'),('ledger'),('fcq_seccao_estado')
+  ('evento_saida'),('ledger'),('fcq_seccao_estado'),('codigo_registo')
 ),
 funcao_de_servico(proname) as (values
   ('anular_pab'),('aprovar_pab'),('assinar_seccao_fcq'),('atribuir_obra'),
-  ('atualizar_obra'),
+  ('atualizar_obra'),('gerar_codigo_registo'),('revogar_codigo_registo'),
+  ('registar_com_codigo'),
   ('corrigir_guia'),('corrigir_item_fcq'),('criar_central'),('criar_frente'),
   ('criar_obra'),('definir_parametro'),('desativar_utilizador'),
   ('fechar_betonagem'),('marcar_item_fcq'),('registar_ficheiro'),
@@ -232,7 +235,7 @@ v(verificacao, ok, detalhe) as (
                     where n.nspname = 'betonagens' and c.relkind in ('r','v')
                       and has_table_privilege('authenticated', c.oid, 'SELECT')
                           <> (c.relname in (select l.relname from tabela_legivel l))),
-                  '21 legíveis; migracao e sequencia_dispositivo invisíveis')
+                  '22 legíveis; migracao e sequencia_dispositivo invisíveis')
 
   union all
   select 'authenticated executa exactamente as funções de serviço, auxiliares e utilitárias',
@@ -252,7 +255,7 @@ v(verificacao, ok, detalhe) as (
                           <> (p.proname in (select f.proname from funcao_de_servico f)
                            or p.proname in (select f.proname from funcao_auxiliar_rls f)
                            or p.proname in (select f.proname from funcao_utilitaria f))),
-                  '21 de serviço + 4 auxiliares + 1 utilitária')
+                  '24 de serviço + 4 auxiliares + 1 utilitária')
 
   union all
   select 'service_role executa exactamente o que as Edge Functions chamam',

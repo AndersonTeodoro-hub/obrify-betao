@@ -11,6 +11,7 @@
 // ecrã conseguir escrever sem passar pelo rpc, é incidente.
 
 import { criarObra, lerObras, mensagemDeErro, type Obra } from './dominio'
+import { PODE_GERIR } from './ecra-gestao'
 import { sair, type UtilizadorDeDominio } from './sessao'
 
 /** Quem pode criar obras. O servidor recusa na mesma; isto só evita mostrar
@@ -75,8 +76,10 @@ export function montarEcraObras(
   utilizador: UtilizadorDeDominio,
   aoSair: () => void,
   aoAbrirObra: (obra: Obra) => void,
+  aoGerir: () => void,
 ): void {
   const podeCriar = PODE_CRIAR_OBRA.includes(utilizador.perfil)
+  const podeGerir = PODE_GERIR.includes(utilizador.perfil)
 
   destino.innerHTML = `
     <section class="ecra">
@@ -85,7 +88,10 @@ export function montarEcraObras(
           <div class="nome"></div>
           <div class="mono perfil"></div>
         </div>
-        <button id="botao-sair" class="btn btn-s" type="button">Sair</button>
+        <div class="topo-accoes">
+          ${podeGerir ? '<button id="botao-gestao" class="btn btn-s" type="button">Gestão</button>' : ''}
+          <button id="botao-sair" class="btn btn-s" type="button">Sair</button>
+        </div>
       </header>
 
       <h2>Obras</h2>
@@ -146,6 +152,10 @@ export function montarEcraObras(
       .then((obras) => desenharLista(lista, obras, aoAbrirObra))
       .catch(mostrarErro)
   }
+
+  destino
+    .querySelector<HTMLButtonElement>('#botao-gestao')
+    ?.addEventListener('click', aoGerir)
 
   destino.querySelector<HTMLButtonElement>('#botao-sair')!.addEventListener('click', () => {
     sair().then(aoSair).catch(mostrarErro)

@@ -1228,6 +1228,116 @@ begin
     'O07 · a correcção ficou no ledger, com o antes e o depois');
 
   -- ══════════════════════════════════════════════════════════════════════════
+  -- Acessos · quem vê o quê, e como nasce um fiscal
+  --
+  -- A partir da 0020 a fiscalização vê a organização inteira, não só as obras
+  -- que alguém se lembrou de lhe atribuir — é da empresa, não do contrato. O
+  -- empreiteiro continua preso às obras atribuídas, e é isso que impede a
+  -- empresa A de ver a obra da empresa B.
+  -- ══════════════════════════════════════════════════════════════════════════
+
+  perform pg_temp.actor(k_admin);
+
+  -- Uma obra que NINGUÉM atribuiu a ninguém. É contra ela que se prova a
+  -- diferença: se o fiscal a vir, vê por ser da organização, não por atribuição.
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'obra3', o.id from betonagens.criar_obra(
+      '2604', 'Obra sem ninguém atribuído') o
+  $q$, 'P01 · obra sem atribuições criada');
+
+  r := r || pg_temp.vale_como($q$
+    select count(*)::text from betonagens.obra $q$,
+    '3', 'P02 · o fiscal vê as três obras da organização, incluindo a não atribuída',
+    k_fiscal);
+
+  r := r || pg_temp.vale_como($q$
+    select count(*)::text from betonagens.obra $q$,
+    '1', 'P03 · o empreiteiro continua a ver só a obra que lhe foi atribuída', k_empr2);
+
+  -- ── o código de registo ───────────────────────────────────────────────────
+
+  r := r || pg_temp.atira_como($q$
+    select betonagens.gerar_codigo_registo(30)
+  $q$, 'PT403', 'P04 · a fiscalização não gera códigos de registo', k_fiscal);
+
+  perform pg_temp.actor(k_admin);
+
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'codigo1', c.id from betonagens.gerar_codigo_registo(30) c
+  $q$, 'P05 · o ADMIN gerou um código');
+
+  r := r || pg_temp.vale($q$
+    select c.perfil::text from betonagens.codigo_registo c
+     where c.id = (select valor from ctx where chave='codigo1') $q$,
+    'FISCALIZACAO', 'P06 · o código só concede FISCALIZACAO');
+
+  -- Renovar revoga o anterior: sem isto ficariam vários códigos válidos, e
+  -- revogar um deixaria de significar alguma coisa.
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'codigo2', c.id from betonagens.gerar_codigo_registo(15) c
+  $q$, 'P07 · o ADMIN renovou o código');
+
+  r := r || pg_temp.vale($q$
+    select count(*)::text from betonagens.codigo_registo c
+     where c.revogado_em is null $q$,
+    '1', 'P08 · só há um código activo de cada vez');
+
+  r := r || pg_temp.vale($q$
+    select (c.revogado_por is not null)::text from betonagens.codigo_registo c
+     where c.id = (select valor from ctx where chave='codigo1') $q$,
+    'true', 'P09 · o código anterior ficou revogado com autor');
+
+  -- Um código para EMPREITEIRO não se cria nem por INSERT directo: a constraint
+  -- é o que impede alguém de fabricar um convite que promova.
+  r := r || pg_temp.atira($q$
+    insert into betonagens.codigo_registo
+      (organizacao_id, codigo, perfil, criado_por, expira_em)
+    values ((select valor from ctx where chave='org'), 'XXXX-XXXX-XXXX', 'EMPREITEIRO',
+            (select valor from ctx where chave='fiscal'), now() + interval '1 day')
+  $q$, '23514', 'P10 · não existe código de registo para EMPREITEIRO');
+
+  -- ── registar-se com o código ──────────────────────────────────────────────
+  -- Quem se regista ainda não tem utilizador de domínio, portanto não se usa
+  -- pg_temp.actor: é preciso um JWT com sub E email, que é de onde a função
+  -- tira o endereço. Aceitar o email por parâmetro deixaria alguém registar-se
+  -- com o email de outra pessoa.
+
+  perform set_config('request.jwt.claims',
+    json_build_object('sub', '10000000-0000-4000-8000-000000000010',
+                      'email', 'novo.fiscal@teste.local')::text, true);
+  perform set_config('request.jwt.claim.sub', '10000000-0000-4000-8000-000000000010', true);
+
+  r := r || pg_temp.atira($q$
+    select betonagens.registar_com_codigo('NAO-EXIS-TE00', 'Fiscal Novo')
+  $q$, 'PT403', 'P11 · código inexistente é recusado');
+
+  r := r || pg_temp.atira($q$
+    select betonagens.registar_com_codigo(
+      (select c.codigo from betonagens.codigo_registo c
+        where c.id = (select valor from ctx where chave='codigo1')), 'Fiscal Novo')
+  $q$, 'PT403', 'P12 · código revogado é recusado');
+
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'fiscal_novo', u.id from betonagens.registar_com_codigo(
+      (select c.codigo from betonagens.codigo_registo c
+        where c.id = (select valor from ctx where chave='codigo2')), 'Fiscal Novo') u
+  $q$, 'P13 · registo com o código em vigor é aceite');
+
+  r := r || pg_temp.vale($q$
+    select u.perfil::text || '|' || u.email from betonagens.utilizador u
+     where u.id = (select valor from ctx where chave='fiscal_novo') $q$,
+    'FISCALIZACAO|novo.fiscal@teste.local',
+    'P14 · nasceu FISCALIZACAO, com o email lido do JWT e não de um parâmetro');
+
+  r := r || pg_temp.atira($q$
+    select betonagens.registar_com_codigo(
+      (select c.codigo from betonagens.codigo_registo c
+        where c.id = (select valor from ctx where chave='codigo2')), 'Outra Vez')
+  $q$, 'PT409', 'P15 · a mesma conta não se regista duas vezes');
+
+  perform pg_temp.actor(k_admin);
+
+  -- ══════════════════════════════════════════════════════════════════════════
   -- Ledger · a cadeia tem de fechar
   -- ══════════════════════════════════════════════════════════════════════════
 

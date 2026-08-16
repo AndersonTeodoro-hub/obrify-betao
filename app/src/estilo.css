@@ -624,6 +624,32 @@ button.linha-doc[aria-current='true']:hover { background: var(--ddn-claro); }
   .area-trabalho .voltar { display: none; }
 }
 
+/* ── entrada e registo ────────────────────────────────────────────────────── */
+
+.topo-accoes { display: flex; gap: 0.5rem; align-items: center; }
+.topo-accoes .btn { margin-top: 0; }
+
+.separador-entrar {
+  margin-top: 1.5rem;
+  padding-top: 1.25rem;
+  border-top: 1px solid var(--linha);
+  text-align: center;
+}
+
+/* Um botão que se lê como ligação. É botão e não <a> porque não navega para
+   lado nenhum — muda o que está no ecrã. */
+.ligacao {
+  padding: 0.5rem;
+  font: inherit;
+  font-size: 0.85rem;
+  color: var(--marcacao);
+  text-decoration: underline;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.ligacao:focus-visible { outline: 3px solid var(--marcacao); outline-offset: 2px; }
+
 /* ── painel de controlo ───────────────────────────────────────────────────── */
 /* A mesma gramática do documento: barras, blocos, etiqueta e valor. O painel
    não é outro produto — é a mesma obra vista de outra distância. */

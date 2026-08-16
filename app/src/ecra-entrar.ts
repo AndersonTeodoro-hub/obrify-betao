@@ -1,13 +1,18 @@
-// Ecrã de entrada. Email e palavra-passe, e mais nada.
+// Ecrã de entrada. Email e palavra-passe, e o caminho para o registo.
 //
-// Sem registo público: as contas são nominais e criadas por quem administra a
-// organização, através de betonagens.registar_utilizador. Não há auto-inscrição
-// porque uma assinatura de FCQ não vale nada se não se souber quem assinou.
+// As contas continuam a ser nominais: uma assinatura de FCQ não vale nada se
+// não se souber quem assinou. O que mudou é COMO nascem — a fiscalização da DDN
+// regista-se com um código da casa, e o empreiteiro continua a ser criado pelo
+// ADMIN, uma conta por empresa. Não há auto-inscrição de empreiteiros.
 
 import { mensagemDeErro } from './dominio'
 import { entrar } from './sessao'
 
-export function montarEcraEntrar(destino: HTMLElement, aoEntrar: () => void): void {
+export function montarEcraEntrar(
+  destino: HTMLElement,
+  aoEntrar: () => void,
+  aoRegistar: () => void,
+): void {
   destino.innerHTML = `
     <section class="ecra">
       <h1>Obrify Betão</h1>
@@ -23,9 +28,18 @@ export function montarEcraEntrar(destino: HTMLElement, aoEntrar: () => void): vo
 
         <button id="botao-entrar" class="btn btn-p" type="submit">Entrar</button>
       </form>
+
+      <p class="separador-entrar">
+        <button id="botao-registar" class="ligacao" type="button">
+          Registar como fiscalização (com código da DDN)
+        </button>
+      </p>
+
       <p id="erro-entrar" class="erro" role="alert" hidden></p>
     </section>
   `
+
+  destino.querySelector<HTMLButtonElement>('#botao-registar')!.addEventListener('click', aoRegistar)
 
   const forma = destino.querySelector<HTMLFormElement>('#forma-entrar')!
   const botao = destino.querySelector<HTMLButtonElement>('#botao-entrar')!

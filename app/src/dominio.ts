@@ -558,6 +558,116 @@ export async function marcarItem(
   if (error) throw error
 }
 
+// ── acessos ─────────────────────────────────────────────────────────────────
+
+export type CodigoRegisto = {
+  id: string
+  codigo: string
+  perfil: string
+  criado_em: string
+  expira_em: string
+}
+
+export type UtilizadorDaOrganizacao = {
+  id: string
+  nome: string
+  email: string
+  perfil: string
+  ativo: boolean
+}
+
+/**
+ * O código de registo em vigor, se houver.
+ *
+ * A RLS só o devolve a ADMIN e DIRETOR_QUALIDADE — um fiscal já registado não
+ * tem de o poder ler, e não lê.
+ */
+export async function lerCodigoAtivo(): Promise<CodigoRegisto | null> {
+  const { data, error } = await betonagens()
+    .from('codigo_registo')
+    .select('id, codigo, perfil, criado_em, expira_em')
+    .is('revogado_em', null)
+    .maybeSingle()
+  if (error) throw error
+  return data as CodigoRegisto | null
+}
+
+/** Gerar um novo revoga o anterior — «renovar» é uma operação, não uma
+ *  acumulação de códigos válidos espalhados por conversas antigas. */
+export async function gerarCodigoRegisto(validadeDias: number): Promise<CodigoRegisto> {
+  const { data, error } = await betonagens().rpc('gerar_codigo_registo', {
+    p_validade_dias: validadeDias,
+  })
+  if (error) throw error
+  const codigo = data as CodigoRegisto | null
+  if (codigo === null) throw new Error('A geração não devolveu o código.')
+  return codigo
+}
+
+export async function revogarCodigoRegisto(id: string): Promise<void> {
+  const { error } = await betonagens().rpc('revogar_codigo_registo', { p_id: id })
+  if (error) throw error
+}
+
+export async function lerUtilizadores(): Promise<UtilizadorDaOrganizacao[]> {
+  const { data, error } = await betonagens()
+    .from('utilizador')
+    .select('id, nome, email, perfil, ativo')
+    .order('nome')
+  if (error) throw error
+  return (data ?? []) as UtilizadorDaOrganizacao[]
+}
+
+/**
+ * Cria a conta de outra pessoa — Auth e domínio — pela Edge Function criar-conta.
+ *
+ * Não é signUp: signUp autenticaria quem acabou de ser criado, e o ADMIN
+ * passaria a estar na sessão do empreiteiro. Criar a conta de outrem exige a
+ * Admin API do Auth, que só responde à chave de serviço — e essa nunca pode
+ * estar no browser.
+ */
+export async function criarContaDeUtilizador(dados: {
+  email: string
+  palavraPasse: string
+  nome: string
+  perfil: 'EMPREITEIRO' | 'FISCALIZACAO' | 'DIRETOR_QUALIDADE'
+  obraId: string | null
+}): Promise<void> {
+  const resposta = await fetch(`${urlDasFuncoes}/criar-conta`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${await tokenDaSessao()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      email: dados.email,
+      palavra_passe: dados.palavraPasse,
+      nome: dados.nome,
+      perfil: dados.perfil,
+      obra_id: dados.obraId,
+    }),
+  })
+
+  const texto = await resposta.text()
+  if (!resposta.ok) {
+    let corpo: unknown = texto
+    try {
+      corpo = JSON.parse(texto)
+    } catch {
+      /* não era JSON: fica o texto */
+    }
+    throw new Error(mensagemDeErro(corpo))
+  }
+}
+
+export async function atribuirObra(utilizadorId: string, obraId: string): Promise<void> {
+  const { error } = await betonagens().rpc('atribuir_obra', {
+    p_utilizador_id: utilizadorId,
+    p_obra_id: obraId,
+  })
+  if (error) throw error
+}
+
 // ── guias de remessa ────────────────────────────────────────────────────────
 
 export type Central = {

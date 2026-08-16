@@ -5,10 +5,12 @@
 // Não é um router: não há URL, não há histórico do browser, não há dependência.
 // Uma variável, uma função que desenha, e a vista muda quando alguém a muda.
 
-import { utilizadorDeDominio } from './sessao'
+import { estadoDaSessao } from './sessao'
 import { montarEcraEntrar } from './ecra-entrar'
 import { montarEcraObras } from './ecra-obras'
 import { montarEcraObra } from './ecra-obra'
+import { montarEcraGestao } from './ecra-gestao'
+import { montarEcraRegisto } from './ecra-registo'
 import { mensagemDeErro, type Obra } from './dominio'
 
 const destino = document.querySelector<HTMLElement>('#app')
@@ -26,6 +28,8 @@ const app = destino
 type Vista =
   | { nome: 'obras' }
   | { nome: 'obra'; obra: Obra }
+  | { nome: 'registo' }
+  | { nome: 'gestao' }
 
 let vista: Vista = { nome: 'obras' }
 
@@ -50,22 +54,44 @@ function mostrarFalha(causa: unknown): void {
 }
 
 function desenhar(): void {
-  utilizadorDeDominio()
-    .then((utilizador) => {
-      if (utilizador === null) {
-        vista = { nome: 'obras' }
-        montarEcraEntrar(app, desenhar)
+  estadoDaSessao()
+    .then((sessao) => {
+      // Uma sessão autenticada sem utilizador de domínio não é erro: é quem
+      // criou a conta e ainda não apresentou o código. Vai para o registo.
+      if (sessao.estado === 'por-registar') {
+        montarEcraRegisto(app, true, desenhar, desenhar)
         return
       }
 
+      if (sessao.estado === 'anonima') {
+        if (vista.nome === 'registo') {
+          montarEcraRegisto(app, false, desenhar, () => irPara({ nome: 'obras' }))
+          return
+        }
+        vista = { nome: 'obras' }
+        montarEcraEntrar(app, desenhar, () => irPara({ nome: 'registo' }))
+        return
+      }
+
+      const utilizador = sessao.utilizador
+
       switch (vista.nome) {
+        case 'registo':
+          // Registo concluído: já há utilizador, o ecrã de registo não tem mais
+          // nada para fazer.
+          irPara({ nome: 'obras' })
+          return
         case 'obras':
           montarEcraObras(
             app,
             utilizador,
             () => irPara({ nome: 'obras' }),
             (obra) => irPara({ nome: 'obra', obra }),
+            () => irPara({ nome: 'gestao' }),
           )
+          return
+        case 'gestao':
+          montarEcraGestao(app, utilizador, () => irPara({ nome: 'obras' }))
           return
         // Os blocos existem para prender a vista já estreitada numa constante:
         // dentro de um fecho, o `vista` volta a ser a união inteira.
