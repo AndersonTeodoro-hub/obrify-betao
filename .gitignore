@@ -8,3 +8,7 @@ dist/
 # entra aqui nem em ficheiro nenhum do repositório.
 .env.local
 .env.*.local
+
+# Directório de trabalho do CLI do Supabase durante o deploy das Edge
+# Functions. É estado da máquina de quem fez o deploy, não do projecto.
+supabase/.temp/

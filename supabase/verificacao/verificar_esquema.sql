@@ -56,7 +56,9 @@ fk_excecao(conname, razao) as (values
   ('parametro_obra_fk',
    'Dezenas de linhas por organização. O acesso quente é parametro_procura, que lidera com organizacao_id.'),
   ('utilizador_obra_utilizador_fk',
-   'Os dois índices são parciais com "revogado_em is null", que é exactamente o filtro de obras_visiveis(). O histórico com revogados é raro e a tabela é pequena.')
+   'Os dois índices são parciais com "revogado_em is null", que é exactamente o filtro de obras_visiveis(). O histórico com revogados é raro e a tabela é pequena.'),
+  ('codigo_registo_organizacao_id_fkey',
+   'codigo_registo_ativo é parcial com "revogado_em is null" e lidera com organizacao_id — e é esse exactamente o acesso: o código em vigor. Os revogados só se lêem em auditoria, numa tabela de dezenas de linhas por organização. A organização nunca é apagada (impedir_remocao), logo não há varrimento de filhos a servir. Mesma forma da excepção acima.')
 ),
 fk_sem_indice as (
   select r.relname as tabela, c.conname
@@ -335,10 +337,13 @@ v(verificacao, ok, detalhe) as (
 
   union all
   -- exigir_perfil, distancia_m, nome_impresso, identidade_externa,
-  -- derivar_ano_civil e agora são puras: não lêem tabela nenhuma — a quinta só
-  -- mexe no tuplo que está a ser inserido e a última só devolve now() — por
-  -- isso não são SECURITY DEFINER. A lista está aqui à vista em vez de se pôr
-  -- SECURITY DEFINER onde não faz falta.
+  -- email_externo, derivar_ano_civil e agora são puras: não lêem tabela
+  -- nenhuma — derivar_ano_civil só mexe no tuplo que está a ser inserido, agora
+  -- só devolve now(), e as duas *_externa só lêem uma definição de sessão com
+  -- current_setting. Por isso não são SECURITY DEFINER. A lista está aqui à
+  -- vista em vez de se pôr SECURITY DEFINER onde não faz falta: privilégio
+  -- elevado numa função que não toca em nada não protege coisa nenhuma, só
+  -- ensina que se põe por hábito.
   select 'funções que acedem a tabelas são SECURITY DEFINER',
          not exists (
            select 1 from pg_proc p join pg_namespace n on n.oid = p.pronamespace
@@ -346,14 +351,16 @@ v(verificacao, ok, detalhe) as (
               and p.prokind = 'f'
               and not p.prosecdef
               and p.proname not in ('exigir_perfil','distancia_m','nome_impresso',
-                                    'identidade_externa','derivar_ano_civil','agora')),
+                                    'identidade_externa','email_externo',
+                                    'derivar_ano_civil','agora')),
          coalesce((select string_agg(p.proname, ', ')
                      from pg_proc p join pg_namespace n on n.oid = p.pronamespace
                     where n.nspname in ('betonagens','betonagens_priv')
                       and p.prokind = 'f'
                       and not p.prosecdef
                       and p.proname not in ('exigir_perfil','distancia_m','nome_impresso',
-                                    'identidade_externa','derivar_ano_civil','agora')),
+                                    'identidade_externa','email_externo',
+                                    'derivar_ano_civil','agora')),
                   'todas')
 
   union all
