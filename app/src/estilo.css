@@ -23,6 +23,10 @@
   /* Largura de folha do documento em desktop. 55rem = 880px, e a conta que a
      escolhe está na @media do documento, lá em baixo. */
   --doc-largura: 55rem;
+  /* A coluna de navegação do ecrã da obra, e o intervalo entre as duas zonas.
+     A conta que as escolhe está na @media das duas zonas. */
+  --nav-largura: 21rem;
+  --espaco-zonas: 1.5rem;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -478,7 +482,7 @@ input[type="time"][disabled] { background: #F1EFEB; color: var(--tinta-2); }
    campo por linha, exactamente como está hoje no telemóvel.
    ═════════════════════════════════════════════════════════════════════════ */
 @media (min-width: 57rem) {
-  .doc {
+  .area-trabalho {
     width: var(--doc-largura);
     margin-inline: calc((100% - var(--doc-largura)) / 2);
   }
@@ -498,6 +502,126 @@ input[type="time"][disabled] { background: #F1EFEB; color: var(--tinta-2); }
     min-width: 0;
   }
   .linha-campos > .campo + .campo { border-left: 1px solid #EDEBE7; }
+}
+
+/* ══ ecrã da obra: navegação à esquerda, trabalho à direita ══════════════════
+   Este é o ecrã mais usado da aplicação, e numa obra real a lista de pedidos
+   só cresce. Numa coluna única, o formulário e o documento ficam para sempre
+   no fundo, atrás de centenas de linhas. Daí as duas zonas.
+
+   A conta das larguras, para desktop:
+
+     navegação  21rem = 336px   (cabe «PAB 12» + peças + estado + data)
+     intervalo 1.5rem =  24px
+     folha      55rem = 880px   (a mesma de sempre, medida antes)
+                       ───────
+     conteúdo          1240px   = 77.5rem
+     + padding da página 32px   = 1272px
+
+   Por isso o limiar é 80rem (1280px): é o primeiro tamanho comum onde as duas
+   zonas cabem sem apertar nenhuma. Abaixo disso empilham, e a lista fica
+   limitada em altura com filtro por cima — que é o que impede o formulário de
+   ficar atrás dela.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+.zona-nav { display: flex; flex-direction: column; gap: 1rem; margin-bottom: 1.5rem; }
+
+/* Com um pedido aberto e sem espaço para as duas zonas, a lista sai da frente.
+   Volta pelo botão de voltar do próprio documento. */
+.a-ver-pab > .zona-nav { display: none; }
+
+/* As frentes consultam-se de vez em quando; os pedidos, sempre. Por isso as
+   frentes ficam dobradas, com a contagem à vista no resumo. */
+.dobra {
+  background: var(--papel);
+  border: 1px solid var(--linha);
+  border-radius: var(--r);
+}
+.dobra > summary {
+  padding: 0.7rem 0.85rem;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.dobra > summary:focus-visible { outline: 3px solid var(--marcacao); outline-offset: -3px; }
+.dobra > .lista { border: 0; border-top: 1px solid var(--linha); border-radius: 0; }
+.dobra > .forma-curta,
+.dobra > .nota-perfil { padding: 0.85rem; margin: 0; border-top: 1px solid var(--linha); }
+
+.cabeca-painel {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.cabeca-painel h2 { margin: 0; }
+.conta { font-size: 0.75rem; font-weight: 400; color: var(--tinta-2); }
+
+.filtro { margin: 0.5rem 0 0.6rem; min-height: 2.75rem; }
+
+/* A lista tem tecto: numa obra com centenas de pedidos, sem isto não há como
+   chegar ao que está por baixo dela sem rolar por tudo. */
+.lista-nav { max-height: 60vh; overflow-y: auto; }
+
+/* Na coluna de navegação a linha é sempre estreita — 336px — mesmo num ecrã
+   de 1920. A disposição compacta tem de vir da CLASSE e não de uma @media de
+   viewport: foi exactamente esse engano que antes cortou os controlos do
+   documento. Aqui é o contentor que manda, e ele não muda de tamanho. */
+.lista-nav .linha-doc { grid-template-columns: auto 1fr auto; row-gap: 0.4rem; }
+.lista-nav .lado-doc {
+  grid-column: 2 / 4;
+  flex-direction: row;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+}
+
+/* O pedido aberto à direita, marcado à esquerda. */
+.linha-doc[aria-current='true'] {
+  background: var(--ddn-claro);
+  box-shadow: inset 3px 0 0 var(--ddn);
+}
+button.linha-doc[aria-current='true']:hover { background: var(--ddn-claro); }
+
+.sem-seleccao {
+  padding: 2.5rem 1rem;
+  font-size: 0.9rem;
+  line-height: 1.6;
+  color: var(--tinta-2);
+  text-align: center;
+  border: 1px dashed var(--linha-forte);
+  border-radius: var(--r);
+}
+
+@media (min-width: 80rem) {
+  .ecra-obra {
+    max-width: calc(var(--nav-largura) + var(--espaco-zonas) + var(--doc-largura));
+    display: grid;
+    grid-template-columns: var(--nav-largura) var(--doc-largura);
+    column-gap: var(--espaco-zonas);
+    align-items: start;
+  }
+  /* O que é da obra inteira atravessa as duas zonas. */
+  .ecra-obra > .voltar,
+  .ecra-obra > .cabecalho-obra,
+  .ecra-obra > .editor-obra,
+  .ecra-obra > .erro { grid-column: 1 / -1; }
+
+  /* A navegação acompanha quem rola o documento — é para isso que serve. */
+  .zona-nav {
+    position: sticky;
+    top: 1.25rem;
+    margin-bottom: 0;
+  }
+  .a-ver-pab > .zona-nav { display: flex; }
+  .lista-nav { max-height: calc(100vh - 22rem); }
+
+  /* A área de trabalho já é uma coluna da grelha: não tem de sair de lado
+     nenhum. Sem isto herdava a margem negativa da folha em coluna única. */
+  .area-trabalho { width: auto; margin-inline: 0; }
+
+  /* Com a lista sempre à vista, voltar é escolher outro pedido. */
+  .area-trabalho .voltar { display: none; }
 }
 
 /* ── lista de documentos ──────────────────────────────────────────────────── */

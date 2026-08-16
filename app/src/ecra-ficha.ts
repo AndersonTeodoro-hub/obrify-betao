@@ -293,8 +293,12 @@ export function montarEcraFicha(
   let ocupado = false
   let estadoPab: EstadoPab = pab.estado
 
+  // Sem <section class="ecra"> à volta: este documento é montado DENTRO da área
+  // de trabalho do ecrã da obra, que já dá a largura e o espaçamento. Trazer o
+  // seu próprio contentor seria uma coluna de 34rem dentro de uma folha de
+  // 55rem, a lutar com ela.
   destino.innerHTML = `
-    <section class="ecra">
+    <div class="envolvente-doc">
       <button id="botao-voltar" class="voltar" type="button"></button>
 
       <article class="doc">
@@ -375,7 +379,7 @@ export function montarEcraFicha(
       </article>
 
       <p id="erro-ficha" class="erro" role="alert" hidden></p>
-    </section>
+    </div>
   `
 
   const voltar = destino.querySelector<HTMLButtonElement>('#botao-voltar')!

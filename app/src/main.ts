@@ -9,17 +9,23 @@ import { utilizadorDeDominio } from './sessao'
 import { montarEcraEntrar } from './ecra-entrar'
 import { montarEcraObras } from './ecra-obras'
 import { montarEcraObra } from './ecra-obra'
-import { montarEcraFicha } from './ecra-ficha'
-import { mensagemDeErro, type Obra, type Pab } from './dominio'
+import { mensagemDeErro, type Obra } from './dominio'
 
 const destino = document.querySelector<HTMLElement>('#app')
 if (destino === null) throw new Error('Falta o elemento #app no index.html.')
 const app = destino
 
+// A ficha deixou de ser vista própria. O PAB escolhido é estado INTERNO do
+// ecrã da obra, e não do estado de navegação, por duas razões:
+//   · em desktop as duas zonas coexistem no mesmo ecrã — uma vista separada não
+//     pode estar ao lado de outra;
+//   · se a escolha subisse até aqui, cada clique num pedido redesenharia o ecrã
+//     inteiro e levaria consigo o que estivesse escrito no formulário e a
+//     posição da lista.
+// O que se perde é poder abrir um PAB directamente. Não havia como: não há URL.
 type Vista =
   | { nome: 'obras' }
   | { nome: 'obra'; obra: Obra }
-  | { nome: 'ficha'; obra: Obra; pab: Pab }
 
 let vista: Vista = { nome: 'obras' }
 
@@ -65,18 +71,7 @@ function desenhar(): void {
         // dentro de um fecho, o `vista` volta a ser a união inteira.
         case 'obra': {
           const { obra } = vista
-          montarEcraObra(
-            app,
-            obra,
-            utilizador,
-            () => irPara({ nome: 'obras' }),
-            (pab) => irPara({ nome: 'ficha', obra, pab }),
-          )
-          return
-        }
-        case 'ficha': {
-          const { obra, pab } = vista
-          montarEcraFicha(app, obra, pab, utilizador, () => irPara({ nome: 'obra', obra }))
+          montarEcraObra(app, obra, utilizador, () => irPara({ nome: 'obras' }))
           return
         }
       }

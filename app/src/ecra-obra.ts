@@ -1,12 +1,29 @@
-// Ecrã de uma obra: frentes e pedidos de autorização de betonagem.
+// Ecrã de uma obra — o mais usado da aplicação. Duas zonas:
+//
+//   ESQUERDA   navegação: frentes (dobradas) e a lista de pedidos, com filtro
+//   DIREITA    trabalho: o formulário de submissão, ou o pedido escolhido
+//
+// Em desktop ficam lado a lado e escolher um pedido à esquerda abre-o à
+// direita, sem sair do ecrã. Em ecrã estreito empilham, e a lista sai da frente
+// enquanto houver um pedido aberto.
+//
+// Isto não é gosto: numa obra real são dezenas de frentes e centenas de pedidos
+// ao longo de meses. Numa coluna única, o formulário e o documento ficam para
+// sempre no fundo, atrás de uma lista que só cresce.
 //
 // A frente é obrigatória para submeter um PAB — pab.frente_id é NOT NULL — e é
 // ela que torna aplicável a regra R6, o bloqueio de duas betonagens em curso na
-// mesma frente. Sem frente não há pedido, e por isso vem primeiro no ecrã.
+// mesma frente. Sem frente não há pedido, e é por isso que o painel das frentes
+// fica aberto enquanto não houver nenhuma.
 //
 // O que a submissão faz do outro lado é mais do que inserir uma linha: atribui
 // o número sequencial da obra e cria a ficha I.CR.033 em rascunho, 1:1 com o
-// PAB. O checklist dessa ficha é a fase C.
+// PAB.
+//
+// O filtro é sobre o que já está em memória — lerPabs traz os pedidos da obra e
+// a procura corre sobre esse array. Não há leitura nova nem paginação.
+// ponytail: filtro em memória; se uma obra passar do tecto de linhas do
+// PostgREST, passa a filtro no servidor.
 
 import {
   atualizarObra,
@@ -19,6 +36,7 @@ import {
   type Obra,
   type Pab,
 } from './dominio'
+import { montarEcraFicha } from './ecra-ficha'
 import type { UtilizadorDeDominio } from './sessao'
 
 /** Quem pode criar frentes, segundo betonagens.criar_frente. */
@@ -27,10 +45,6 @@ const PODE_CRIAR_FRENTE = ['ADMIN', 'DIRETOR_QUALIDADE', 'FISCALIZACAO']
 /** Quem pode submeter um PAB, segundo betonagens.submeter_pab. O ADMIN não:
  *  administra contas e obras, não pede betonagens. */
 const PODE_SUBMETER_PAB = ['EMPREITEIRO', 'FISCALIZACAO', 'DIRETOR_QUALIDADE']
-
-/** Quem pode preencher a ficha, segundo betonagens.marcar_item_fcq. É a
- *  fiscalização que inspecciona — o empreiteiro pede, não se auto-verifica. */
-const PODE_MARCAR_FICHA = ['FISCALIZACAO', 'DIRETOR_QUALIDADE']
 
 /** Quem pode corrigir o cabeçalho do impresso, segundo
  *  betonagens.atualizar_obra. Os mesmos que criam obras. */
@@ -139,19 +153,30 @@ function desenharFrentes(destino: HTMLElement, frentes: Frente[]): void {
   }
 }
 
+/** O texto contra o qual o filtro compara: tudo o que se procura de cabeça —
+ *  o número, as peças, a frente e o estado. */
+function textoPesquisavel(pab: Pab, frente: string): string {
+  return [String(pab.numero), pab.elemento, frente, pab.estado, pab.classe_betao]
+    .join(' ')
+    .toLowerCase()
+}
+
 function desenharPabs(
   destino: HTMLElement,
   pabs: Pab[],
   frentes: Frente[],
-  podeAbrirFicha: boolean,
-  aoAbrirFicha: (pab: Pab) => void,
+  seleccionado: string | null,
+  aoSeleccionar: (pab: Pab) => void,
+  vazioPorFiltro: boolean,
 ): void {
   destino.replaceChildren()
 
   if (pabs.length === 0) {
     const vazio = document.createElement('li')
     vazio.className = 'vazio'
-    vazio.textContent = 'Ainda não há pedidos de betonagem nesta obra.'
+    vazio.textContent = vazioPorFiltro
+      ? 'Nenhum pedido corresponde ao filtro.'
+      : 'Ainda não há pedidos de betonagem nesta obra.'
     destino.append(vazio)
     return
   }
@@ -196,28 +221,27 @@ function desenharPabs(
     lado.className = 'lado-doc'
     lado.append(estado, data)
 
+    const seta = document.createElement('span')
+    seta.className = 'seta'
+    seta.setAttribute('aria-hidden', 'true')
+    seta.textContent = '›'
+
+    // Abre para todos os perfis. Ler o próprio pedido não é inspeccionar: o
+    // documento é o mesmo, e o bloco de verificações fica inerte para quem não
+    // inspecciona — os botões desactivados e a nota a dizer de quem é a ficha.
+    // Quem decide o que se pode marcar é betonagens.marcar_item_fcq, e isso não
+    // muda por a linha da esquerda abrir.
+    const botao = document.createElement('button')
+    botao.type = 'button'
+    botao.className = 'linha-doc'
+    botao.append(referencia, corpo, lado, seta)
+    // aria-current e não só uma classe: quem navega por leitor de ecrã tem de
+    // saber qual dos pedidos é o que está aberto à direita.
+    if (pab.id === seleccionado) botao.setAttribute('aria-current', 'true')
+    botao.addEventListener('click', () => aoSeleccionar(pab))
+
     const item = document.createElement('li')
-
-    // Quem não pode marcar a ficha vê a linha, mas ela não abre — é a mesma
-    // regra que betonagens.marcar_item_fcq aplica, dita antes de o utilizador
-    // bater nela.
-    if (podeAbrirFicha) {
-      const seta = document.createElement('span')
-      seta.className = 'seta'
-      seta.setAttribute('aria-hidden', 'true')
-      seta.textContent = '›'
-
-      const botao = document.createElement('button')
-      botao.type = 'button'
-      botao.className = 'linha-doc'
-      botao.append(referencia, corpo, lado, seta)
-      botao.addEventListener('click', () => aoAbrirFicha(pab))
-      item.append(botao)
-    } else {
-      item.className = 'linha-doc'
-      item.append(referencia, corpo, lado)
-    }
-
+    item.append(botao)
     destino.append(item)
   }
 }
@@ -243,21 +267,21 @@ export function montarEcraObra(
   obra: Obra,
   utilizador: UtilizadorDeDominio,
   aoVoltar: () => void,
-  aoAbrirFicha: (pab: Pab) => void,
 ): void {
   const podeCriarFrente = PODE_CRIAR_FRENTE.includes(utilizador.perfil)
   const podeSubmeter = PODE_SUBMETER_PAB.includes(utilizador.perfil)
-  const podeAbrirFicha = PODE_MARCAR_FICHA.includes(utilizador.perfil)
   const podeEditarObra = PODE_EDITAR_OBRA.includes(utilizador.perfil)
 
   destino.innerHTML = `
-    <section class="ecra">
+    <section class="ecra ecra-obra">
       <button id="botao-voltar" class="voltar" type="button">‹ Obras</button>
 
       <header class="cabecalho-obra">
         <div class="mono codigo-obra"></div>
         <h1 class="designacao-obra"></h1>
       </header>
+
+      <p id="erro-obra" class="erro" role="alert" hidden></p>
 
       ${
         podeEditarObra
@@ -295,27 +319,42 @@ export function montarEcraObra(
           : ''
       }
 
-      <h2>Frentes</h2>
-      <ul id="lista-frentes" class="lista"><li class="vazio">A carregar…</li></ul>
+      <nav class="zona-nav">
+        <details id="painel-frentes" class="dobra">
+          <summary>Frentes <span id="conta-frentes" class="mono conta"></span></summary>
+          <ul id="lista-frentes" class="lista"><li class="vazio">A carregar…</li></ul>
 
-      ${
-        podeCriarFrente
-          ? `<form id="forma-frente" class="forma-curta">
-        <label for="designacao-frente">Nova frente</label>
-        <input id="designacao-frente" name="designacao-frente" type="text" required
-               autocomplete="off" placeholder="Bloco B / Piso 0">
-        <button id="botao-criar-frente" class="btn btn-p" type="submit">Criar frente</button>
-      </form>`
-          : `<p class="nota-perfil">O perfil ${utilizador.perfil} não cria frentes.</p>`
-      }
+          ${
+            podeCriarFrente
+              ? `<form id="forma-frente" class="forma-curta">
+            <label for="designacao-frente">Nova frente</label>
+            <input id="designacao-frente" name="designacao-frente" type="text" required
+                   autocomplete="off" placeholder="Bloco B / Piso 0">
+            <button id="botao-criar-frente" class="btn btn-p" type="submit">Criar frente</button>
+          </form>`
+              : `<p class="nota-perfil">O perfil ${utilizador.perfil} não cria frentes.</p>`
+          }
+        </details>
 
-      <h2>Pedidos de betonagem</h2>
-      <ul id="lista-pabs" class="lista"><li class="vazio">A carregar…</li></ul>
+        <div class="painel-pabs">
+          <div class="cabeca-painel">
+            <h2>Pedidos</h2>
+            <span id="conta-pabs" class="mono conta"></span>
+          </div>
+          <input id="filtro-pabs" class="filtro" type="search" autocomplete="off"
+                 placeholder="Filtrar: número, peças, frente, estado"
+                 aria-label="Filtrar pedidos de betonagem">
+          <ul id="lista-pabs" class="lista lista-nav"><li class="vazio">A carregar…</li></ul>
+        </div>
+      </nav>
 
+      <div class="area-trabalho">
+        <div id="doc-pab" hidden></div>
+
+        <div id="zona-submissao">
       ${
         podeSubmeter
-          ? `<h2>Submeter pedido</h2>
-      <p id="sem-frentes" class="nota-perfil" hidden>
+          ? `<p id="sem-frentes" class="nota-perfil" hidden>
         Não há frentes nesta obra. Um pedido tem sempre uma frente — cria uma primeiro.
       </p>
       <form id="forma-pab" class="doc doc-preenchimento" hidden>
@@ -465,10 +504,13 @@ export function montarEcraObra(
           <button id="botao-submeter" class="btn btn-p" type="submit">Submeter pedido</button>
         </div>
       </form>`
-          : `<p class="nota-perfil">O perfil ${utilizador.perfil} não submete pedidos de betonagem.</p>`
+          : `<p class="sem-seleccao">
+        O perfil ${utilizador.perfil} não submete pedidos de betonagem.<br>
+        Escolha um pedido na lista para o abrir.
+      </p>`
       }
-
-      <p id="erro-obra" class="erro" role="alert" hidden></p>
+        </div>
+      </div>
     </section>
   `
 
@@ -488,11 +530,86 @@ export function montarEcraObra(
   const semFrentes = destino.querySelector<HTMLParagraphElement>('#sem-frentes')
   const selectFrente = destino.querySelector<HTMLSelectElement>('#frente-pab')
 
+  const seccao = destino.querySelector<HTMLElement>('.ecra-obra')!
+  const painelFrentes = destino.querySelector<HTMLDetailsElement>('#painel-frentes')!
+  const contaFrentes = destino.querySelector<HTMLSpanElement>('#conta-frentes')!
+  const contaPabs = destino.querySelector<HTMLSpanElement>('#conta-pabs')!
+  const filtro = destino.querySelector<HTMLInputElement>('#filtro-pabs')!
+  const zonaSubmissao = destino.querySelector<HTMLElement>('#zona-submissao')!
+  const docPab = destino.querySelector<HTMLElement>('#doc-pab')!
+
+  // ── selecção e filtro ─────────────────────────────────────────────────────
+  // O PAB escolhido não sobe ao estado de navegação: se subisse, cada clique
+  // redesenharia o ecrã inteiro e levaria consigo o que estivesse escrito no
+  // formulário. Fica aqui, e só a área de trabalho é remontada.
+  let pabsCarregados: Pab[] = []
+  let frentesCarregadas: Frente[] = []
+  let seleccionado: Pab | null = null
+
+  const nomeDaFrente = (id: string): string =>
+    frentesCarregadas.find((f) => f.id === id)?.designacao ?? ''
+
+  const desenharLista = (): void => {
+    const termo = filtro.value.trim().toLowerCase()
+    const visiveis =
+      termo === ''
+        ? pabsCarregados
+        : pabsCarregados.filter((p) =>
+            textoPesquisavel(p, nomeDaFrente(p.frente_id)).includes(termo),
+          )
+
+    // A contagem diz sempre quantos ficaram de fora. Uma lista filtrada sem o
+    // dizer é a maneira mais fácil de alguém concluir que um pedido não existe.
+    contaPabs.textContent =
+      visiveis.length === pabsCarregados.length
+        ? String(pabsCarregados.length)
+        : `${visiveis.length} de ${pabsCarregados.length}`
+
+    desenharPabs(
+      listaPabs,
+      visiveis,
+      frentesCarregadas,
+      seleccionado?.id ?? null,
+      escolher,
+      termo !== '',
+    )
+  }
+
+  const mostrarAreaDeTrabalho = (): void => {
+    const aberto = seleccionado !== null
+    docPab.hidden = !aberto
+    zonaSubmissao.hidden = aberto
+    // Em ecrã estreito não cabem as duas zonas: com um pedido aberto, a lista
+    // sai da frente e volta com o botão de voltar do próprio documento.
+    seccao.classList.toggle('a-ver-pab', aberto)
+  }
+
+  function escolher(pab: Pab): void {
+    seleccionado = pab
+    mostrarAreaDeTrabalho()
+    montarEcraFicha(docPab, obra, pab, utilizador, () => {
+      seleccionado = null
+      mostrarAreaDeTrabalho()
+      docPab.replaceChildren()
+      desenharLista()
+    })
+    desenharLista()
+  }
+
+  filtro.addEventListener('input', desenharLista)
+
   const recarregar = (): void => {
     Promise.all([lerFrentes(obra.id), lerPabs(obra.id)])
       .then(([frentes, pabs]) => {
+        frentesCarregadas = frentes
+        pabsCarregados = pabs
+
         desenharFrentes(listaFrentes, frentes)
-        desenharPabs(listaPabs, pabs, frentes, podeAbrirFicha, aoAbrirFicha)
+        contaFrentes.textContent = String(frentes.length)
+        // Fica aberto enquanto não houver frentes: sem frente não há pedido, e
+        // esconder o que falta fazer atrás de um triângulo não ajuda ninguém.
+        painelFrentes.open = frentes.length === 0
+        desenharLista()
 
         if (formaPab !== null && semFrentes !== null && selectFrente !== null) {
           preencherFrentes(selectFrente, frentes)
