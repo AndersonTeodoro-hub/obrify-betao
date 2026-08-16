@@ -7,7 +7,7 @@
 // escrita daqui funcionar sem rpc, é incidente.
 
 import { proximoRegisto } from './dispositivo'
-import { betonagens } from './supabase'
+import { betonagens, cliente, tokenDaSessao, urlDasFuncoes } from './supabase'
 
 // ── erros ───────────────────────────────────────────────────────────────────
 
@@ -556,6 +556,225 @@ export async function marcarItem(
     p_anotacao: anotacao,
   })
   if (error) throw error
+}
+
+// ── guias de remessa ────────────────────────────────────────────────────────
+
+export type Central = {
+  id: string
+  designacao: string
+  prefixo_guias: string | null
+  ativa: boolean
+}
+
+export type Guia = {
+  id: string
+  numero_guia: string
+  central_id: string
+  data_hora_betonagem: string
+  hora_carga: string | null
+  volume_m3: number
+  classe_betao: string
+  slump_mm: number | null
+  temperatura_c: number | null
+  conformidade: 'CONFORME' | 'COM_ALERTA' | 'NAO_CONFORME'
+  ficheiro_id: string
+  /** Relógio do servidor. O declarado pelo dispositivo é outra coluna, e a
+   *  divergência entre os dois é sinal de risco — não se troca um pelo outro. */
+  recebido_em: string
+  registado_por_fiscalizacao: boolean
+  motivo_substituicao: string | null
+}
+
+export async function lerCentrais(): Promise<Central[]> {
+  const { data, error } = await betonagens()
+    .from('central_betonagem')
+    .select('id, designacao, prefixo_guias, ativa')
+    .order('designacao')
+  if (error) throw error
+  return (data ?? []) as Central[]
+}
+
+export async function criarCentral(designacao: string, prefixo: string | null): Promise<void> {
+  const { error } = await betonagens().rpc('criar_central', {
+    p_designacao: designacao,
+    p_prefixo_guias: prefixo,
+  })
+  if (error) throw error
+}
+
+/**
+ * As guias em vigor de um PAB.
+ *
+ * `substituida_por_id is null` e não «todas»: uma guia corrigida continua na
+ * base — nada se apaga — mas quem soma volumes tem de somar o que está em
+ * vigor, senão conta duas vezes o mesmo betão.
+ */
+export async function lerGuias(pabId: string): Promise<Guia[]> {
+  const { data, error } = await betonagens()
+    .from('guia_remessa')
+    .select('id, numero_guia, central_id, data_hora_betonagem, hora_carga, volume_m3, classe_betao, slump_mm, temperatura_c, conformidade, ficheiro_id, recebido_em, registado_por_fiscalizacao, motivo_substituicao')
+    .eq('pab_id', pabId)
+    .is('substituida_por_id', null)
+    .order('data_hora_betonagem')
+  if (error) throw error
+  return (data ?? []) as Guia[]
+}
+
+/**
+ * Carrega a fotografia da guia e devolve o id do ficheiro registado.
+ *
+ * Não passa pelo PostgREST nem pelo Storage directamente: vai à Edge Function
+ * carregar-guia, que calcula o sha256 SOBRE OS BYTES QUE RECEBE. É esse hash
+ * que dá valor ao INV3 — «a mesma fotografia não entra duas vezes». Um hash
+ * calculado aqui, no telemóvel, não provaria nada: bastava enviar uma
+ * fotografia e declarar o resumo de outra.
+ *
+ * O id é gerado aqui e viaja com o pedido, para o reenvio ser reconhecido em
+ * vez de duplicar. Continua a ser v4, pela mesma razão escrita no marcarItem:
+ * o v7 entra com a fila offline, onde serve também de ordenação.
+ */
+export async function carregarFotoGuia(
+  obraId: string,
+  ficheiro: File,
+  origem: 'CAMARA' | 'GALERIA',
+  justificacaoGaleria: string | null,
+): Promise<string> {
+  const forma = new FormData()
+  forma.append('id', crypto.randomUUID())
+  forma.append('obra_id', obraId)
+  forma.append('origem', origem)
+  if (justificacaoGaleria !== null) forma.append('justificacao_galeria', justificacaoGaleria)
+  forma.append('ficheiro', ficheiro)
+
+  const resposta = await fetch(`${urlDasFuncoes}/carregar-guia`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${await tokenDaSessao()}` },
+    body: forma,
+  })
+
+  const texto = await resposta.text()
+  if (!resposta.ok) {
+    // A frase do servidor sobe inteira. mensagemDeErro sabe ler o objecto do
+    // PostgREST; o que não for JSON aparece como veio.
+    let corpo: unknown = texto
+    try {
+      corpo = JSON.parse(texto)
+    } catch {
+      /* não era JSON: fica o texto */
+    }
+    throw new Error(mensagemDeErro(corpo))
+  }
+
+  const corpo = JSON.parse(texto) as { ficheiro_id?: string }
+  if (typeof corpo.ficheiro_id !== 'string') {
+    throw new Error(`O carregamento não devolveu ficheiro_id. Veio: ${texto}`)
+  }
+  return corpo.ficheiro_id
+}
+
+/**
+ * Um endereço temporário para ver a fotografia de uma guia.
+ *
+ * O balde é privado e não tem política de escrita nenhuma — a única porta de
+ * entrada é a Edge Function. Para ler, a política da 0018 deixa passar quem vê
+ * a obra, e é sobre ela que este endereço assinado é emitido. Dura um minuto:
+ * é para abrir, não para partilhar.
+ */
+export async function enderecoDaFoto(ficheiroId: string): Promise<string> {
+  const { data, error } = await betonagens()
+    .from('ficheiro')
+    .select('caminho_storage')
+    .eq('id', ficheiroId)
+    .maybeSingle()
+  if (error) throw error
+  if (data === null) {
+    throw new Error(`O ficheiro ${ficheiroId} não está registado, ou não é visível nesta sessão.`)
+  }
+
+  // caminho_storage guarda «balde/chave»; o cliente do Storage quer os dois
+  // separados. A convenção está escrita na 0018.
+  const caminho = String((data as { caminho_storage: string }).caminho_storage)
+  const separador = caminho.indexOf('/')
+  if (separador < 1) {
+    throw new Error(`O caminho "${caminho}" não tem a forma balde/chave que a 0018 fixou.`)
+  }
+
+  const { data: assinado, error: erroAssinatura } = await cliente.storage
+    .from(caminho.slice(0, separador))
+    .createSignedUrl(caminho.slice(separador + 1), 60)
+  if (erroAssinatura) throw erroAssinatura
+  return assinado.signedUrl
+}
+
+export type NovaGuia = {
+  pabId: string
+  centralId: string
+  numeroGuia: string
+  dataHoraBetonagem: string
+  volumeM3: number
+  classeBetao: string
+  ficheiroId: string
+  horaCarga: string | null
+  slumpMm: number | null
+  temperaturaC: number | null
+}
+
+/**
+ * Regista a guia. Sem GPS: latitude, longitude e precisão ficam nulas.
+ *
+ * A geolocalização tem permissão do browser, recusa própria e erro próprio —
+ * é matéria com fluxo dedicado, e enfiá-la aqui alargava o âmbito sem o dizer.
+ */
+export async function registarGuia(dados: NovaGuia): Promise<void> {
+  const momento = await agoraDeclarado()
+  const dispositivo = proximoRegisto()
+
+  const { error } = await betonagens().rpc('registar_guia', {
+    p_id: crypto.randomUUID(),
+    p_pab_id: dados.pabId,
+    p_central_id: dados.centralId,
+    p_numero_guia: dados.numeroGuia,
+    p_data_hora_betonagem: dados.dataHoraBetonagem,
+    p_volume_m3: dados.volumeM3,
+    p_classe_betao: dados.classeBetao,
+    p_ficheiro_id: dados.ficheiroId,
+    p_momento_declarado: momento,
+    p_dispositivo_id: dispositivo.id,
+    p_sequencia: dispositivo.sequencia,
+    p_hora_carga: dados.horaCarga,
+    p_slump_mm: dados.slumpMm,
+    p_temperatura_c: dados.temperaturaC,
+  })
+  if (error) throw error
+}
+
+/**
+ * Fecha a betonagem e devolve o estado que o servidor confirmou.
+ *
+ * A R8 — não se fecha uma betonagem sem guias — é do servidor, e é a frase dele
+ * que aparece quando recusa. Aqui não se antecipa nada.
+ */
+export async function fecharBetonagem(pabId: string): Promise<EstadoPab> {
+  const momento = await agoraDeclarado()
+  const dispositivo = proximoRegisto()
+
+  const { data, error } = await betonagens().rpc('fechar_betonagem', {
+    p_pab_id: pabId,
+    p_momento_declarado: momento,
+    p_dispositivo_id: dispositivo.id,
+    p_sequencia: dispositivo.sequencia,
+  })
+  if (error) throw error
+
+  const estado = (data as Pab | null)?.estado
+  if (estado === undefined) {
+    throw new Error(
+      'O fecho não devolveu o PAB, e sem isso não há como confirmar em que estado ficou. ' +
+        'Recarregue antes de repetir.',
+    )
+  }
+  return estado
 }
 
 /**

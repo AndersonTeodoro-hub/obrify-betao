@@ -1,0 +1,8 @@
+{
+  "lock": false,
+  "fmt": { "singleQuote": true, "semiColons": false, "lineWidth": 96 },
+  "tasks": {
+    "verificar": "deno check carregar-guia/index.ts carregar-guia/carregar_test.ts",
+    "testar": "deno test --allow-none carregar-guia/"
+  }
+}

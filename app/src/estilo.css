@@ -624,6 +624,52 @@ button.linha-doc[aria-current='true']:hover { background: var(--ddn-claro); }
   .area-trabalho .voltar { display: none; }
 }
 
+/* ── receção do betão ─────────────────────────────────────────────────────── */
+/* A folha «Guias» do mapa de controlo: o registo atómico de que tudo o resto
+   agrega. Uma linha por guia, com a conformidade que o SERVIDOR determinou —
+   classe divergente, sobreconsumo, slump fora do intervalo. Não se recalcula
+   aqui nada disso: seria uma segunda opinião sobre o mesmo facto. */
+.guias { border-top: 1px solid var(--linha); }
+.linha-guia { border-bottom: 1px solid #EDEBE7; }
+.linha-guia:last-child { border-bottom: 0; }
+.linha-guia .anotacao-registada { grid-column: 1 / -1; margin-top: 0.4rem; }
+
+.conf-CONFORME    { background: var(--ddn-claro);   color: var(--ddn-esc); }
+.conf-COM_ALERTA  { background: var(--hivis-claro); color: #6B4B00; }
+.conf-NAO_CONFORME{ background: var(--ferro-claro); color: var(--ferro); }
+
+.btn-foto {
+  padding: 0.25rem 0.5rem;
+  font: inherit;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--marcacao);
+  background: none;
+  border: 1px solid var(--linha-forte);
+  border-radius: 2px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-foto:focus-visible { outline: 3px solid var(--marcacao); outline-offset: 2px; }
+
+/* Dobras dentro do documento: sem moldura própria, para não parecerem um
+   cartão pousado em cima da folha. */
+.dobra-clara {
+  border: 0;
+  border-top: 1px solid var(--linha-forte);
+  border-radius: 0;
+  background: #FAF9F7;
+}
+.dobra-clara > form { padding-bottom: 0; }
+
+/* O campo da fotografia é o primeiro do formulário porque é o que se faz com o
+   camião à frente. */
+.campo input[type='file'] {
+  padding: 0.6rem;
+  font-size: 0.85rem;
+  background: var(--papel);
+}
+
 /* ── lista de documentos ──────────────────────────────────────────────────── */
 
 .linha-doc {

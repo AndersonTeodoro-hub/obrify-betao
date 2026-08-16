@@ -31,3 +31,29 @@ export const cliente = createClient(url, chaveAnonima, {
 
 /** A única porta para o schema betonagens. */
 export const betonagens = () => cliente.schema('betonagens')
+
+/**
+ * A base das Edge Functions deste projecto.
+ *
+ * Nem tudo passa pelo PostgREST: o carregamento da fotografia da guia tem de
+ * calcular o sha256 no servidor, e isso é uma função. O URL deriva do mesmo
+ * VITE_SUPABASE_URL — não há aqui uma segunda configuração para alguém pôr
+ * errada.
+ */
+export const urlDasFuncoes = `${url.replace(/\/+$/, '')}/functions/v1`
+
+/**
+ * O token da sessão actual, para os pedidos que não passam pelo supabase-js.
+ *
+ * Atira se não houver sessão: um carregamento anónimo seria recusado do outro
+ * lado, e é melhor dizê-lo aqui do que fazer a viagem para trazer um 401.
+ */
+export async function tokenDaSessao(): Promise<string> {
+  const { data, error } = await cliente.auth.getSession()
+  if (error) throw error
+  const token = data.session?.access_token
+  if (token === undefined) {
+    throw new Error('Não há sessão iniciada. Volte a entrar antes de carregar a fotografia.')
+  }
+  return token
+}

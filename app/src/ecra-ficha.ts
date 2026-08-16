@@ -29,18 +29,27 @@
 import {
   aprovarPab,
   assinarSeccao,
+  carregarFotoGuia,
+  criarCentral,
+  enderecoDaFoto,
+  fecharBetonagem,
+  lerCentrais,
   lerEstadoSeccoes,
   lerFicha,
   lerFrentes,
+  lerGuias,
   lerItensInspecao,
   lerLinhasPreBetonagem,
   marcarItem,
   mensagemDeErro,
   NOME_DA_SECCAO,
+  registarGuia,
   SECCOES_PRE_BETONAGEM,
+  type Central,
   type EstadoPab,
   type EstadoSeccao,
   type Ficha,
+  type Guia,
   type ItemFicha,
   type LinhaFicha,
   type Obra,
@@ -48,6 +57,7 @@ import {
   type SeccaoFcq,
   type ValorFcq,
 } from './dominio'
+import { lerNumero } from './campos'
 import type { UtilizadorDeDominio } from './sessao'
 
 /** Os três RPC deste ecrã — marcar_item_fcq, assinar_seccao_fcq e aprovar_pab —
@@ -67,21 +77,29 @@ const TITULO: Record<ValorFcq, string> = {
   NA: 'Não aplicável',
 }
 
+/** Os estados em que a receção do betão faz sentido. Antes de aprovado não há
+ *  betão para receber; depois de fechada a ficha, o bloco é histórico. */
+const COM_RECECAO: EstadoPab[] = ['APROVADO', 'EM_BETONAGEM', 'BETONADO', 'FCQ_FECHADA']
+
 type Dados = {
   ficha: Ficha
   linhas: LinhaFicha[]
   itens: Map<string, ItemFicha>
   estados: Map<SeccaoFcq, EstadoSeccao>
   frente: string | null
+  guias: Guia[]
+  centrais: Central[]
 }
 
 async function carregar(pab: Pab, obraId: string): Promise<Dados> {
   const ficha = await lerFicha(pab.id)
-  const [linhas, itens, estados, frentes] = await Promise.all([
+  const [linhas, itens, estados, frentes, guias, centrais] = await Promise.all([
     lerLinhasPreBetonagem(ficha.modelo_impresso_id),
     lerItensInspecao(ficha.id),
     lerEstadoSeccoes(ficha.id),
     lerFrentes(obraId),
+    lerGuias(pab.id),
+    lerCentrais(),
   ])
   return {
     ficha,
@@ -89,6 +107,8 @@ async function carregar(pab: Pab, obraId: string): Promise<Dados> {
     itens: new Map(itens.map((i) => [i.linha_codigo, i])),
     estados: new Map(estados.map((e) => [e.seccao, e])),
     frente: frentes.find((f) => f.id === pab.frente_id)?.designacao ?? null,
+    guias,
+    centrais,
   }
 }
 
@@ -165,6 +185,111 @@ function decisao(pab: Pab): string | null {
     return `Anulado em ${horaLocal(pab.anulado_em)} — ${pab.motivo_anulacao ?? 'sem motivo registado'}`
   }
   return null
+}
+
+/**
+ * O resumo da receção, calculado a pedido a partir das guias.
+ *
+ * A pedido e não guardado, como diz a nota de implementação do painel: a estes
+ * volumes uma soma é instantânea, e um contador guardado é uma oportunidade de
+ * dessincronização.
+ */
+function resumoDaRececao(guias: Guia[], centrais: Central[]) {
+  const nomeCentral = new Map(centrais.map((c) => [c.id, c.designacao]))
+  const momentos = guias.map((g) => new Date(g.data_hora_betonagem).getTime()).sort()
+  return {
+    volume: guias.reduce((soma, g) => soma + Number(g.volume_m3), 0),
+    origens: [...new Set(guias.map((g) => nomeCentral.get(g.central_id) ?? '—'))].join(' · '),
+    inicio: momentos.length === 0 ? null : new Date(momentos[0]!).toISOString(),
+    fim: momentos.length === 0 ? null : new Date(momentos[momentos.length - 1]!).toISOString(),
+  }
+}
+
+function preencherCentrais(select: HTMLSelectElement, centrais: Central[]): void {
+  const escolhida = select.value
+  select.replaceChildren()
+
+  for (const central of centrais.filter((c) => c.ativa)) {
+    const opcao = document.createElement('option')
+    opcao.value = central.id
+    opcao.textContent = central.designacao
+    select.append(opcao)
+  }
+
+  if (centrais.some((c) => c.id === escolhida)) select.value = escolhida
+}
+
+/** A tabela de guias — a folha «Guias» do mapa de controlo, que é a fonte
+ *  única de que tudo o resto agrega. */
+function desenharGuias(destino: HTMLElement, dados: Dados, aoVerFoto: (g: Guia) => void): void {
+  destino.replaceChildren()
+
+  if (dados.guias.length === 0) {
+    const vazio = document.createElement('p')
+    vazio.className = 'vazio'
+    vazio.textContent = 'Ainda não há guias registadas nesta betonagem.'
+    destino.append(vazio)
+    return
+  }
+
+  const nomeCentral = new Map(dados.centrais.map((c) => [c.id, c.designacao]))
+
+  for (const guia of dados.guias) {
+    const numero = document.createElement('span')
+    numero.className = 'mono ref-doc'
+    numero.textContent = guia.numero_guia
+
+    const corpo = document.createElement('span')
+    corpo.className = 'corpo-doc'
+
+    const titulo = document.createElement('span')
+    titulo.className = 'titulo-doc'
+    titulo.textContent = `${guia.volume_m3} m³ · ${guia.classe_betao}`
+
+    const sub = document.createElement('span')
+    sub.className = 'sub-doc'
+    sub.textContent = [
+      nomeCentral.get(guia.central_id) ?? 'central desconhecida',
+      horaLocal(guia.data_hora_betonagem) ?? '—',
+      guia.slump_mm === null ? null : `slump ${guia.slump_mm} mm`,
+      guia.temperatura_c === null ? null : `${guia.temperatura_c} °C`,
+      guia.registado_por_fiscalizacao ? 'registada pela fiscalização' : null,
+    ]
+      .filter((p): p is string => p !== null)
+      .join(' · ')
+
+    corpo.append(titulo, sub)
+
+    const lado = document.createElement('span')
+    lado.className = 'lado-doc'
+
+    // A conformidade vem do servidor: classe divergente, sobreconsumo, slump
+    // fora do intervalo. Não se recalcula aqui — seria uma segunda opinião.
+    const conf = document.createElement('span')
+    conf.className = `estado conf-${guia.conformidade}`
+    conf.textContent = guia.conformidade.replace('_', ' ')
+
+    const foto = document.createElement('button')
+    foto.type = 'button'
+    foto.className = 'btn-foto'
+    foto.textContent = 'Ver foto'
+    foto.addEventListener('click', () => aoVerFoto(guia))
+
+    lado.append(conf, foto)
+
+    const linha = document.createElement('div')
+    linha.className = 'linha-doc linha-guia'
+    linha.append(numero, corpo, lado)
+
+    if (guia.motivo_substituicao !== null) {
+      const motivo = document.createElement('div')
+      motivo.className = 'anotacao-registada'
+      motivo.textContent = `Correcção: ${guia.motivo_substituicao}`
+      linha.append(motivo)
+    }
+
+    destino.append(linha)
+  }
 }
 
 function desenharCabecalhoSeccao(
@@ -288,6 +413,10 @@ export function montarEcraFicha(
   aoVoltar: () => void,
 ): void {
   const podeInspecionar = PERFIS_DE_INSPECAO.includes(utilizador.perfil)
+  /** Quem pode criar centrais, segundo betonagens.criar_central. */
+  const podeCriarCentral = ['ADMIN', 'DIRETOR_QUALIDADE', 'FISCALIZACAO'].includes(
+    utilizador.perfil,
+  )
 
   let fichaId: string | null = null
   let ocupado = false
@@ -364,6 +493,105 @@ export function montarEcraFicha(
           <div id="seccoes"><p class="vazio">A carregar…</p></div>
         </section>
 
+        <section class="doc-bloco" id="bloco-rececao" hidden>
+          <div class="doc-barra">
+            <span>Receção do betão</span>
+            <span class="barra-lado"><span class="mono" id="resumo-volume"></span></span>
+          </div>
+          <div class="campos" id="rececao-resumo"></div>
+          <div id="lista-guias" class="guias"></div>
+
+          <details id="forma-guia-dobra" class="dobra dobra-clara">
+            <summary>Registar guia de remessa</summary>
+            <form id="forma-guia">
+              <div class="campos">
+                <div class="campo campo-largo">
+                  <label for="foto-guia">Fotografia da guia</label>
+                  <input id="foto-guia" name="foto-guia" type="file"
+                         accept="image/jpeg,image/png,image/webp" capture="environment" required>
+                  <label class="caixa" for="foto-galeria">
+                    <input id="foto-galeria" name="foto-galeria" type="checkbox">
+                    Veio da galeria, não da câmara
+                  </label>
+                </div>
+                <div class="campo campo-largo" id="campo-justificacao" hidden>
+                  <label for="justificacao-galeria">Porque não foi fotografada na hora</label>
+                  <input id="justificacao-galeria" name="justificacao-galeria" type="text"
+                         autocomplete="off"
+                         placeholder="Telemóvel sem bateria; guia fotografada no escritório">
+                </div>
+              </div>
+
+              <div class="campos">
+                <div class="linha-campos linha-3">
+                  <div class="campo">
+                    <label for="numero-guia">N.º da guia</label>
+                    <input id="numero-guia" class="mono" name="numero-guia" type="text" required
+                           autocomplete="off" placeholder="118588">
+                  </div>
+                  <div class="campo">
+                    <label for="central-guia">Central</label>
+                    <select id="central-guia" name="central-guia" required></select>
+                  </div>
+                  <div class="campo">
+                    <label for="volume-guia">Volume (m³)</label>
+                    <input id="volume-guia" class="mono" name="volume-guia" type="text" required
+                           inputmode="decimal" autocomplete="off" placeholder="8,00">
+                  </div>
+                </div>
+                <div class="linha-campos linha-3">
+                  <div class="campo">
+                    <label for="classe-guia">Classe de betão</label>
+                    <input id="classe-guia" class="mono" name="classe-guia" type="text" required
+                           autocomplete="off" minlength="3">
+                  </div>
+                  <div class="campo">
+                    <label for="data-guia">Data e hora da betonagem</label>
+                    <input id="data-guia" class="mono" name="data-guia" type="datetime-local" required>
+                  </div>
+                  <div class="campo">
+                    <label for="hora-carga">Hora de carga <span class="op">opcional</span></label>
+                    <input id="hora-carga" class="mono" name="hora-carga" type="datetime-local">
+                  </div>
+                </div>
+                <div class="linha-campos linha-2">
+                  <div class="campo">
+                    <label for="slump-guia">Slump (mm) <span class="op">opcional</span></label>
+                    <input id="slump-guia" class="mono" name="slump-guia" type="text"
+                           inputmode="numeric" autocomplete="off" placeholder="120">
+                  </div>
+                  <div class="campo">
+                    <label for="temperatura-guia">Temperatura (°C) <span class="op">opcional</span></label>
+                    <input id="temperatura-guia" class="mono" name="temperatura-guia" type="text"
+                           inputmode="decimal" autocomplete="off" placeholder="22,5">
+                  </div>
+                </div>
+              </div>
+
+              <div class="doc-accao">
+                <button id="botao-guia" class="btn btn-p" type="submit">Registar guia</button>
+              </div>
+            </form>
+          </details>
+
+          ${
+            podeCriarCentral
+              ? `<details id="forma-central-dobra" class="dobra dobra-clara">
+            <summary>Nova central de betonagem</summary>
+            <form id="forma-central" class="forma-curta">
+              <label for="designacao-central">Designação</label>
+              <input id="designacao-central" name="designacao-central" type="text" required
+                     autocomplete="off" placeholder="Betão Liz — Lagos">
+              <label for="prefixo-central">Prefixo das guias <span class="op">opcional</span></label>
+              <input id="prefixo-central" class="mono" name="prefixo-central" type="text"
+                     autocomplete="off" placeholder="BL">
+              <button id="botao-central" class="btn btn-s" type="submit">Criar central</button>
+            </form>
+          </details>`
+              : ''
+          }
+        </section>
+
         <section class="doc-bloco">
           <h3>Observações</h3>
           <div class="campos" id="bloco-observacoes"></div>
@@ -375,6 +603,7 @@ export function montarEcraFicha(
             <span id="estado-rodape" class="estado"></span>
           </div>
           <button id="botao-aprovar" class="btn btn-p" type="button" hidden>Aprovar betonagem</button>
+          <button id="botao-fechar" class="btn btn-p" type="button" hidden>Fechar betonagem</button>
         </footer>
       </article>
 
@@ -409,6 +638,14 @@ export function montarEcraFicha(
   const estadoRodape = destino.querySelector<HTMLSpanElement>('#estado-rodape')!
   const estadoTopo = destino.querySelector<HTMLSpanElement>('#estado-pab')!
   const botaoAprovar = destino.querySelector<HTMLButtonElement>('#botao-aprovar')!
+  const botaoFechar = destino.querySelector<HTMLButtonElement>('#botao-fechar')!
+  const blocoRececao = destino.querySelector<HTMLElement>('#bloco-rececao')!
+  const formaGuiaDobra = destino.querySelector<HTMLDetailsElement>('#forma-guia-dobra')!
+  const listaGuias = destino.querySelector<HTMLElement>('#lista-guias')!
+  const rececaoResumo = destino.querySelector<HTMLElement>('#rececao-resumo')!
+  const resumoVolume = destino.querySelector<HTMLElement>('#resumo-volume')!
+  const formaGuia = destino.querySelector<HTMLFormElement>('#forma-guia')!
+  const selectCentral = destino.querySelector<HTMLSelectElement>('#central-guia')!
 
   const mostrarErro = (causa: unknown): void => {
     erro.textContent = mensagemDeErro(causa)
@@ -513,6 +750,14 @@ export function montarEcraFicha(
       alvo.className = `estado estado-${estadoPab}`
     }
     botaoAprovar.hidden = !podeInspecionar || estadoPab !== 'SUBMETIDO'
+    // Fechar é de quem regista as guias, não só de quem inspecciona — o
+    // fechar_betonagem aceita empreiteiro, fiscalização e direcção de qualidade.
+    botaoFechar.hidden = estadoPab !== 'EM_BETONAGEM'
+    blocoRececao.hidden = !COM_RECECAO.includes(estadoPab)
+    // Depois de fechada, as guias ficam para leitura: a R7 já não deixa entrar
+    // mais nenhuma, e mostrar um formulário que o servidor vai recusar é
+    // convidar alguém a escrever para nada.
+    formaGuiaDobra.hidden = estadoPab !== 'APROVADO' && estadoPab !== 'EM_BETONAGEM'
   }
 
   // O botão fica activo mesmo com o gate por cumprir: é o servidor que decide,
@@ -528,6 +773,136 @@ export function montarEcraFicha(
       },
     )
   })
+
+  botaoFechar.addEventListener('click', () => {
+    executar(
+      () => fecharBetonagem(pab.id),
+      (estado) => {
+        estadoPab = estado
+        desenharEstado()
+        recarregar()
+      },
+    )
+  })
+
+  // ── receção do betão ──────────────────────────────────────────────────────
+
+  const foto = destino.querySelector<HTMLInputElement>('#foto-guia')!
+  const daGaleria = destino.querySelector<HTMLInputElement>('#foto-galeria')!
+  const campoJustificacao = destino.querySelector<HTMLElement>('#campo-justificacao')!
+  const justificacao = destino.querySelector<HTMLInputElement>('#justificacao-galeria')!
+  const numeroGuia = destino.querySelector<HTMLInputElement>('#numero-guia')!
+  const volumeGuia = destino.querySelector<HTMLInputElement>('#volume-guia')!
+  const classeGuia = destino.querySelector<HTMLInputElement>('#classe-guia')!
+  const dataGuia = destino.querySelector<HTMLInputElement>('#data-guia')!
+  const horaCarga = destino.querySelector<HTMLInputElement>('#hora-carga')!
+  const slumpGuia = destino.querySelector<HTMLInputElement>('#slump-guia')!
+  const temperaturaGuia = destino.querySelector<HTMLInputElement>('#temperatura-guia')!
+  const botaoGuia = destino.querySelector<HTMLButtonElement>('#botao-guia')!
+
+  // A classe pré-preenchida com a do PAB, e editável: o que veio pode não ser o
+  // que se pediu, e é isso que o registo tem de poder dizer. Se divergir, o
+  // servidor grava na mesma e marca a guia como não conforme — não se apaga.
+  classeGuia.value = pab.classe_betao
+
+  daGaleria.addEventListener('change', () => {
+    campoJustificacao.hidden = !daGaleria.checked
+    justificacao.required = daGaleria.checked
+    if (!daGaleria.checked) justificacao.value = ''
+  })
+
+  formaGuia.addEventListener('submit', (evento) => {
+    evento.preventDefault()
+
+    const ficheiro = foto.files?.[0]
+    if (ficheiro === undefined) {
+      mostrarErro('Escolha ou tire a fotografia da guia. Sem fotografia não há registo.')
+      return
+    }
+
+    const volume = lerNumero(volumeGuia.value)
+    if (volume.estado !== 'ok' || volume.valor <= 0) {
+      mostrarErro('Indique o volume desta guia em metros cúbicos, maior do que zero.')
+      volumeGuia.focus()
+      return
+    }
+
+    const slump = lerNumero(slumpGuia.value)
+    if (slump.estado === 'invalido') {
+      mostrarErro('O slump tem de ser um número em milímetros, ou ficar vazio.')
+      slumpGuia.focus()
+      return
+    }
+
+    const temperatura = lerNumero(temperaturaGuia.value)
+    if (temperatura.estado === 'invalido') {
+      mostrarErro('A temperatura tem de ser um número em graus, ou ficar vazia.')
+      temperaturaGuia.focus()
+      return
+    }
+
+    const origem = daGaleria.checked ? 'GALERIA' : 'CAMARA'
+    const porque = daGaleria.checked ? justificacao.value.trim() : null
+
+    botaoGuia.textContent = 'A carregar a fotografia…'
+    executar(
+      async () => {
+        // Duas viagens, por esta ordem e não ao contrário: a fotografia
+        // primeiro, porque o registo da guia exige um ficheiro já registado.
+        const ficheiroId = await carregarFotoGuia(obra.id, ficheiro, origem, porque)
+        botaoGuia.textContent = 'A registar a guia…'
+        await registarGuia({
+          pabId: pab.id,
+          centralId: selectCentral.value,
+          numeroGuia: numeroGuia.value.trim(),
+          dataHoraBetonagem: new Date(dataGuia.value).toISOString(),
+          volumeM3: volume.valor,
+          classeBetao: classeGuia.value.trim(),
+          ficheiroId,
+          horaCarga: horaCarga.value === '' ? null : new Date(horaCarga.value).toISOString(),
+          slumpMm: slump.estado === 'ok' ? slump.valor : null,
+          temperaturaC: temperatura.estado === 'ok' ? temperatura.valor : null,
+        })
+      },
+      () => {
+        formaGuia.reset()
+        classeGuia.value = pab.classe_betao
+        campoJustificacao.hidden = true
+        recarregar()
+      },
+    )
+    botaoGuia.textContent = 'Registar guia'
+  })
+
+  const formaCentral = destino.querySelector<HTMLFormElement>('#forma-central')
+  if (formaCentral !== null) {
+    const designacao = destino.querySelector<HTMLInputElement>('#designacao-central')!
+    const prefixo = destino.querySelector<HTMLInputElement>('#prefixo-central')!
+    formaCentral.addEventListener('submit', (evento) => {
+      evento.preventDefault()
+      executar(
+        () =>
+          criarCentral(
+            designacao.value.trim(),
+            prefixo.value.trim() === '' ? null : prefixo.value.trim(),
+          ),
+        () => {
+          formaCentral.reset()
+          recarregar()
+        },
+      )
+    })
+  }
+
+  const verFoto = (guia: Guia): void => {
+    erro.hidden = true
+    enderecoDaFoto(guia.ficheiro_id)
+      .then((endereco) => {
+        // noopener: a página aberta não fica com referência para esta.
+        window.open(endereco, '_blank', 'noopener')
+      })
+      .catch(mostrarErro)
+  }
 
   desenharEstado()
 
@@ -602,6 +977,41 @@ export function montarEcraFicha(
       ),
       campo('Peças a betonar', pab.elemento, true),
     )
+
+    // ── receção do betão ────────────────────────────────────────────────────
+    const resumo = resumoDaRececao(dados.guias, dados.centrais)
+    const previsto = Number(pab.volume_previsto_m3)
+
+    resumoVolume.textContent = `${resumo.volume.toFixed(2)} / ${previsto.toFixed(2)} m³`
+
+    // O desvio só é conclusivo com a betonagem fechada. Num PAB em curso,
+    // ficar abaixo do previsto é o estado normal — dizer «em falta» todos os
+    // dias é a forma mais rápida de fazer com que ninguém olhe para o painel.
+    const fechada = estadoPab === 'BETONADO' || estadoPab === 'FCQ_FECHADA'
+    const desvio = previsto === 0 ? 0 : ((resumo.volume - previsto) / previsto) * 100
+    const leituraDoDesvio =
+      dados.guias.length === 0
+        ? null
+        : !fechada
+          ? `${desvio >= 0 ? '+' : ''}${desvio.toFixed(1)} % — betonagem em curso, ainda não é um desvio`
+          : `${desvio >= 0 ? '+' : ''}${desvio.toFixed(1)} % face ao previsto`
+
+    rececaoResumo.replaceChildren(
+      linha(
+        campo('Origem do betão', resumo.origens === '' ? null : resumo.origens),
+        campo('Volume betonado', `${resumo.volume.toFixed(2)} m³`),
+        campo('Desvio', leituraDoDesvio),
+      ),
+      linha(
+        campo('Hora de início', horaLocal(resumo.inicio)),
+        campo('Hora de fim', horaLocal(resumo.fim)),
+        campo('Guias', String(dados.guias.length)),
+      ),
+    )
+
+    desenharGuias(listaGuias, dados, verFoto)
+
+    preencherCentrais(selectCentral, dados.centrais)
 
     seccoes.replaceChildren()
 

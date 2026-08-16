@@ -36,6 +36,7 @@ import {
   type Obra,
   type Pab,
 } from './dominio'
+import { lerNumero, textoOuNulo } from './campos'
 import { montarEcraFicha } from './ecra-ficha'
 import type { UtilizadorDeDominio } from './sessao'
 
@@ -56,36 +57,6 @@ function dataISO(dias: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-function textoOuNulo(valor: string): string | null {
-  const limpo = valor.trim()
-  return limpo === '' ? null : limpo
-}
-
-// Number('') é 0. Foi um zero silencioso destes que fez o servidor recusar a
-// primeira submissão com «o volume previsto tem de ser maior do que zero» — o
-// campo estava vazio e o código transformou isso num valor errado em vez de num
-// erro. Aqui os três casos são distintos e quem chama tem de os tratar.
-type Numero =
-  | { estado: 'vazio' }
-  | { estado: 'invalido' }
-  | { estado: 'ok'; valor: number }
-
-/**
- * Aceita vírgula ou ponto como separador decimal. Em Portugal escreve-se 40,00,
- * e um <input type="number"> devolve string vazia quando não consegue
- * interpretar o que lá está — o que transformava «40,00» em zero. Por isso os
- * campos são type="text" com inputmode="decimal": o teclado do telemóvel
- * continua a ser o numérico, e a interpretação é nossa e explícita.
- *
- * Uma segunda vírgula ou ponto torna o número ambíguo — 1,000,50 pode ser mil e
- * meio ou um vírgula zero — e nesse caso recusa-se em vez de adivinhar.
- */
-function lerNumero(texto: string): Numero {
-  const limpo = texto.trim().replace(',', '.')
-  if (limpo === '') return { estado: 'vazio' }
-  const valor = Number(limpo)
-  return Number.isFinite(valor) ? { estado: 'ok', valor } : { estado: 'invalido' }
-}
 
 /**
  * O cabeçalho de identificação do impresso, nos quatro campos marcados com
