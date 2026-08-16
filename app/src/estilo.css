@@ -624,6 +624,53 @@ button.linha-doc[aria-current='true']:hover { background: var(--ddn-claro); }
   .area-trabalho .voltar { display: none; }
 }
 
+/* ── painel de controlo ───────────────────────────────────────────────────── */
+/* A mesma gramática do documento: barras, blocos, etiqueta e valor. O painel
+   não é outro produto — é a mesma obra vista de outra distância. */
+
+.btn-painel {
+  width: 100%;
+  min-height: 2.75rem;
+  padding: 0.6rem 0.85rem;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--papel);
+  text-align: left;
+  background: var(--marcacao);
+  border: 0;
+  border-radius: var(--r);
+  cursor: pointer;
+}
+.btn-painel:focus-visible { outline: 3px solid var(--tinta); outline-offset: 2px; }
+
+.contadores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  padding: 0.85rem;
+}
+.contador { display: flex; flex-direction: column; align-items: flex-start; gap: 0.3rem; }
+.contador-numero { font-size: 1.6rem; font-weight: 700; line-height: 1; }
+
+.painel-linha {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.3rem 0.75rem;
+  align-items: baseline;
+  padding: 0.6rem 0.85rem;
+  border-bottom: 1px solid #EDEBE7;
+}
+.painel-linha:last-child { border-bottom: 0; }
+.painel-nome { font-weight: 600; font-size: 0.9rem; }
+.painel-valor { font-size: 0.85rem; white-space: nowrap; }
+
+/* A barra ocupa a linha toda por baixo do texto: comparar comprimentos é mais
+   rápido do que ler números, e é para isso que ela existe. */
+.barra { grid-column: 1 / -1; width: 100%; height: 8px; border-radius: 2px; }
+
+.valor-grande { font-size: 1.25rem; font-weight: 700; }
+
 /* ── receção do betão ─────────────────────────────────────────────────────── */
 /* A folha «Guias» do mapa de controlo: o registo atómico de que tudo o resto
    agrega. Uma linha por guia, com a conformidade que o SERVIDOR determinou —

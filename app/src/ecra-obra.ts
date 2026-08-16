@@ -38,6 +38,7 @@ import {
 } from './dominio'
 import { lerNumero, textoOuNulo } from './campos'
 import { montarEcraFicha } from './ecra-ficha'
+import { montarEcraPainel } from './ecra-painel'
 import type { UtilizadorDeDominio } from './sessao'
 
 /** Quem pode criar frentes, segundo betonagens.criar_frente. */
@@ -291,6 +292,10 @@ export function montarEcraObra(
       }
 
       <nav class="zona-nav">
+        <button id="botao-painel" class="btn-painel" type="button">
+          Painel de controlo da obra
+        </button>
+
         <details id="painel-frentes" class="dobra">
           <summary>Frentes <span id="conta-frentes" class="mono conta"></span></summary>
           <ul id="lista-frentes" class="lista"><li class="vazio">A carregar…</li></ul>
@@ -515,7 +520,11 @@ export function montarEcraObra(
   // formulário. Fica aqui, e só a área de trabalho é remontada.
   let pabsCarregados: Pab[] = []
   let frentesCarregadas: Frente[] = []
-  let seleccionado: Pab | null = null
+  // O que está aberto na área de trabalho. Uma união e não dois booleanos: com
+  // dois, existiria o estado «painel aberto E pedido aberto», que não quer
+  // dizer nada e alguém teria de se lembrar de o impedir.
+  let aberto: { tipo: 'pab'; pab: Pab } | { tipo: 'painel' } | null = null
+  const seleccionadoId = (): string | null => (aberto?.tipo === 'pab' ? aberto.pab.id : null)
 
   const nomeDaFrente = (id: string): string =>
     frentesCarregadas.find((f) => f.id === id)?.designacao ?? ''
@@ -536,36 +545,38 @@ export function montarEcraObra(
         ? String(pabsCarregados.length)
         : `${visiveis.length} de ${pabsCarregados.length}`
 
-    desenharPabs(
-      listaPabs,
-      visiveis,
-      frentesCarregadas,
-      seleccionado?.id ?? null,
-      escolher,
-      termo !== '',
-    )
+    desenharPabs(listaPabs, visiveis, frentesCarregadas, seleccionadoId(), escolher, termo !== '')
   }
 
   const mostrarAreaDeTrabalho = (): void => {
-    const aberto = seleccionado !== null
-    docPab.hidden = !aberto
-    zonaSubmissao.hidden = aberto
-    // Em ecrã estreito não cabem as duas zonas: com um pedido aberto, a lista
-    // sai da frente e volta com o botão de voltar do próprio documento.
-    seccao.classList.toggle('a-ver-pab', aberto)
+    const temCoisa = aberto !== null
+    docPab.hidden = !temCoisa
+    zonaSubmissao.hidden = temCoisa
+    // Em ecrã estreito não cabem as duas zonas: com alguma coisa aberta, a
+    // lista sai da frente e volta com o botão de voltar do próprio conteúdo.
+    seccao.classList.toggle('a-ver-pab', temCoisa)
+  }
+
+  const fechar = (): void => {
+    aberto = null
+    mostrarAreaDeTrabalho()
+    docPab.replaceChildren()
+    desenharLista()
   }
 
   function escolher(pab: Pab): void {
-    seleccionado = pab
+    aberto = { tipo: 'pab', pab }
     mostrarAreaDeTrabalho()
-    montarEcraFicha(docPab, obra, pab, utilizador, () => {
-      seleccionado = null
-      mostrarAreaDeTrabalho()
-      docPab.replaceChildren()
-      desenharLista()
-    })
+    montarEcraFicha(docPab, obra, pab, utilizador, fechar)
     desenharLista()
   }
+
+  destino.querySelector<HTMLButtonElement>('#botao-painel')!.addEventListener('click', () => {
+    aberto = { tipo: 'painel' }
+    mostrarAreaDeTrabalho()
+    montarEcraPainel(docPab, obra, fechar)
+    desenharLista()
+  })
 
   filtro.addEventListener('input', desenharLista)
 

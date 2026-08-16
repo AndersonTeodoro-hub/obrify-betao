@@ -569,6 +569,7 @@ export type Central = {
 
 export type Guia = {
   id: string
+  pab_id: string
   numero_guia: string
   central_id: string
   data_hora_betonagem: string
@@ -613,7 +614,7 @@ export async function criarCentral(designacao: string, prefixo: string | null): 
 export async function lerGuias(pabId: string): Promise<Guia[]> {
   const { data, error } = await betonagens()
     .from('guia_remessa')
-    .select('id, numero_guia, central_id, data_hora_betonagem, hora_carga, volume_m3, classe_betao, slump_mm, temperatura_c, conformidade, ficheiro_id, recebido_em, registado_por_fiscalizacao, motivo_substituicao')
+    .select('id, pab_id, numero_guia, central_id, data_hora_betonagem, hora_carga, volume_m3, classe_betao, slump_mm, temperatura_c, conformidade, ficheiro_id, recebido_em, registado_por_fiscalizacao, motivo_substituicao')
     .eq('pab_id', pabId)
     .is('substituida_por_id', null)
     .order('data_hora_betonagem')
@@ -671,6 +672,28 @@ export async function carregarFotoGuia(
     throw new Error(`O carregamento não devolveu ficheiro_id. Veio: ${texto}`)
   }
   return corpo.ficheiro_id
+}
+
+/**
+ * Todas as guias em vigor de uma obra — a fonte única do painel.
+ *
+ * Uma leitura só, e os acumuladores calculam-se a partir dela em memória. É a
+ * nota de implementação do painel: a estes volumes uma soma é instantânea, e um
+ * contador guardado é uma oportunidade de dessincronização.
+ *
+ * ponytail: sem paginação, como o lerPabs. Uma obra com mais de mil guias bate
+ * no tecto de linhas do PostgREST e o painel passa a contar menos do que há —
+ * quando isso se aproximar, os acumuladores passam a agregação no servidor.
+ */
+export async function lerGuiasDaObra(obraId: string): Promise<Guia[]> {
+  const { data, error } = await betonagens()
+    .from('guia_remessa')
+    .select('id, pab_id, numero_guia, central_id, data_hora_betonagem, hora_carga, volume_m3, classe_betao, slump_mm, temperatura_c, conformidade, ficheiro_id, recebido_em, registado_por_fiscalizacao, motivo_substituicao')
+    .eq('obra_id', obraId)
+    .is('substituida_por_id', null)
+    .order('data_hora_betonagem', { ascending: false })
+  if (error) throw error
+  return (data ?? []) as Guia[]
 }
 
 /**
