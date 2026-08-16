@@ -29,6 +29,7 @@ import {
   atualizarObra,
   criarFrente,
   lerFrentes,
+  lerGuiasDaObra,
   lerPabs,
   mensagemDeErro,
   submeterPab,
@@ -137,6 +138,7 @@ function desenharPabs(
   destino: HTMLElement,
   pabs: Pab[],
   frentes: Frente[],
+  guiasPorPab: Map<string, number>,
   seleccionado: string | null,
   aoSeleccionar: (pab: Pab) => void,
   vazioPorFiltro: boolean,
@@ -192,6 +194,24 @@ function desenharPabs(
     const lado = document.createElement('span')
     lado.className = 'lado-doc'
     lado.append(estado, data)
+
+    // O que falta fazer, à vista na lista. Sem isto era preciso abrir cada
+    // pedido para descobrir qual espera guias — e foi por isso que o registo de
+    // guias ficou por encontrar.
+    const guias = guiasPorPab.get(pab.id) ?? 0
+    const pendencia =
+      pab.estado === 'APROVADO' && guias === 0
+        ? 'guias por registar'
+        : pab.estado === 'EM_BETONAGEM'
+          ? `${guias} ${guias === 1 ? 'guia' : 'guias'} · por fechar`
+          : null
+
+    if (pendencia !== null) {
+      const marca = document.createElement('span')
+      marca.className = 'pendencia'
+      marca.textContent = pendencia
+      corpo.append(marca)
+    }
 
     const seta = document.createElement('span')
     seta.className = 'seta'
@@ -520,6 +540,9 @@ export function montarEcraObra(
   // formulário. Fica aqui, e só a área de trabalho é remontada.
   let pabsCarregados: Pab[] = []
   let frentesCarregadas: Frente[] = []
+  // Quantas guias tem cada pedido. Uma leitura por obra, não uma por pedido:
+  // é a mesma que o painel já faz.
+  let guiasPorPab = new Map<string, number>()
   // O que está aberto na área de trabalho. Uma união e não dois booleanos: com
   // dois, existiria o estado «painel aberto E pedido aberto», que não quer
   // dizer nada e alguém teria de se lembrar de o impedir.
@@ -545,7 +568,15 @@ export function montarEcraObra(
         ? String(pabsCarregados.length)
         : `${visiveis.length} de ${pabsCarregados.length}`
 
-    desenharPabs(listaPabs, visiveis, frentesCarregadas, seleccionadoId(), escolher, termo !== '')
+    desenharPabs(
+      listaPabs,
+      visiveis,
+      frentesCarregadas,
+      guiasPorPab,
+      seleccionadoId(),
+      escolher,
+      termo !== '',
+    )
   }
 
   const mostrarAreaDeTrabalho = (): void => {
@@ -581,10 +612,12 @@ export function montarEcraObra(
   filtro.addEventListener('input', desenharLista)
 
   const recarregar = (): void => {
-    Promise.all([lerFrentes(obra.id), lerPabs(obra.id)])
-      .then(([frentes, pabs]) => {
+    Promise.all([lerFrentes(obra.id), lerPabs(obra.id), lerGuiasDaObra(obra.id)])
+      .then(([frentes, pabs, guias]) => {
         frentesCarregadas = frentes
         pabsCarregados = pabs
+        guiasPorPab = new Map()
+        for (const g of guias) guiasPorPab.set(g.pab_id, (guiasPorPab.get(g.pab_id) ?? 0) + 1)
 
         desenharFrentes(listaFrentes, frentes)
         contaFrentes.textContent = String(frentes.length)

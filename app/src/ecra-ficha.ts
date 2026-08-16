@@ -452,6 +452,11 @@ export function montarEcraFicha(
           <span class="mono valor-numero" id="numero-pab"></span>
         </div>
 
+        <!-- O que falta fazer, no topo. O bloco da receção fica a seguir aos 20
+             critérios, como no impresso — e quem vem registar guias não tinha
+             como saber que estava lá em baixo. -->
+        <button id="atalho-guias" class="atalho" type="button" hidden></button>
+
         <section class="doc-bloco">
           <h3>Localização</h3>
           <div class="campos" id="bloco-localizacao"></div>
@@ -499,6 +504,7 @@ export function montarEcraFicha(
             <span class="barra-lado"><span class="mono" id="resumo-volume"></span></span>
           </div>
           <div class="campos" id="rececao-resumo"></div>
+          <p id="aviso-centrais" class="aviso-bloqueio" hidden></p>
           <div id="lista-guias" class="guias"></div>
 
           <details id="forma-guia-dobra" class="dobra dobra-clara">
@@ -646,6 +652,15 @@ export function montarEcraFicha(
   const resumoVolume = destino.querySelector<HTMLElement>('#resumo-volume')!
   const formaGuia = destino.querySelector<HTMLFormElement>('#forma-guia')!
   const selectCentral = destino.querySelector<HTMLSelectElement>('#central-guia')!
+  const atalhoGuias = destino.querySelector<HTMLButtonElement>('#atalho-guias')!
+  const avisoCentrais = destino.querySelector<HTMLParagraphElement>('#aviso-centrais')!
+
+  // O atalho leva ao bloco e abre a dobra — quem carrega nele quer registar,
+  // não quer chegar lá e ter de abrir mais uma coisa.
+  atalhoGuias.addEventListener('click', () => {
+    formaGuiaDobra.open = true
+    blocoRececao.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  })
 
   const mostrarErro = (causa: unknown): void => {
     erro.textContent = mensagemDeErro(causa)
@@ -757,7 +772,9 @@ export function montarEcraFicha(
     // Depois de fechada, as guias ficam para leitura: a R7 já não deixa entrar
     // mais nenhuma, e mostrar um formulário que o servidor vai recusar é
     // convidar alguém a escrever para nada.
-    formaGuiaDobra.hidden = estadoPab !== 'APROVADO' && estadoPab !== 'EM_BETONAGEM'
+    const aceitaGuias = estadoPab === 'APROVADO' || estadoPab === 'EM_BETONAGEM'
+    formaGuiaDobra.hidden = !aceitaGuias
+    atalhoGuias.hidden = !aceitaGuias
   }
 
   // O botão fica activo mesmo com o gate por cumprir: é o servidor que decide,
@@ -1012,6 +1029,24 @@ export function montarEcraFicha(
     desenharGuias(listaGuias, dados, verFoto)
 
     preencherCentrais(selectCentral, dados.centrais)
+
+    // Sem central não há guia: o registar_guia exige uma, activa e da
+    // organização. Um <select> vazio deixaria quem regista a carregar num botão
+    // que ia falhar sem dizer porquê — e quem regista é o empreiteiro, que não
+    // pode criar centrais (criar_central só aceita ADMIN, direção de qualidade
+    // e fiscalização).
+    const semCentrais = dados.centrais.filter((c) => c.ativa).length === 0
+    avisoCentrais.hidden = !semCentrais
+    avisoCentrais.textContent = podeCriarCentral
+      ? 'Não há centrais de betonagem nesta organização. Crie uma abaixo antes de registar a primeira guia.'
+      : 'Não há centrais de betonagem nesta organização, e o seu perfil não as cria. ' +
+        'Peça à DDN que registe a central antes de lançar guias.'
+    botaoGuia.disabled = semCentrais
+
+    const guiasEmFalta = dados.guias.length === 0
+    atalhoGuias.textContent = guiasEmFalta
+      ? 'Registar a primeira guia de remessa desta betonagem →'
+      : `Registar mais uma guia · ${dados.guias.length} já registada${dados.guias.length === 1 ? '' : 's'} →`
 
     seccoes.replaceChildren()
 

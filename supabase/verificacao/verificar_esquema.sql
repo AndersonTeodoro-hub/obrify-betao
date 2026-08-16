@@ -95,7 +95,8 @@ migracao_esperada(ficheiro, ordem) as (values
   ('0017_atualizar_obra.sql',              17),
   ('0018_storage_guias.sql',               18),
   ('0019_gravar_guia_ordem.sql',           19),
-  ('0020_acessos.sql',                     20)
+  ('0020_acessos.sql',                     20),
+  ('0021_impressos_e_origem_gerado.sql',   21)
 ),
 -- O que TEM de estar concedido. Sem estas listas o verificador só sabe ver
 -- privilégios a mais e é cego a revogações: uma retirada silenciosa só se
