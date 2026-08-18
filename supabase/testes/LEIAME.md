@@ -22,12 +22,12 @@ fim. Ordena-se por número, não por estado, para se poder ler como um percurso.
 n    estado   teste
 1    ok       E01 · esquema betonagens existe
 ...
-999999 RESUMO  122 verificações · 122 ok · 0 falhas · 3 notas declaradas
+999999 RESUMO  149 verificações · 149 ok · 0 falhas · 3 notas declaradas
 ```
 
 `ok` passou · `FALHA` não passou · `nota` é uma omissão declarada, não uma falha.
 
-A suite tem **122 verificações e 3 notas**. As notas não entram na contagem de
+A suite tem **149 verificações e 3 notas**. As notas não entram na contagem de
 verificações porque não verificam nada: registam decisões, e estão explicadas
 no fim deste documento.
 
@@ -49,7 +49,7 @@ diferentes. Não deixa rasto e não precisa de limpeza.
 
 ### Base de dados vazia (migrações por aplicar)
 
-**122 falhas e 3 notas.** Nenhuma verificação passa, e é a falha correta: cada
+**149 falhas e 3 notas.** Nenhuma verificação passa, e é a falha correta: cada
 linha diz o que faltou.
 
 - as verificações de estrutura devolvem `esperava [true], obteve [NULO]` ou
@@ -66,9 +66,9 @@ Nenhuma verificação passa por acidente numa base vazia. Foi para isso que toda
 as comparações são positivas (`= 'true'`, `= 'sem INSERT'`) em vez de negativas:
 um `not exists` sobre uma tabela que não existe passaria pela razão errada.
 
-### Migrações 0001 a 0010 aplicadas
+### Migrações 0001 a 0022 aplicadas
 
-**122 ok, 0 falhas, 3 notas.**
+**149 ok, 0 falhas, 3 notas.**
 
 Qualquer `FALHA` aqui é um desvio entre o que está no repositório e o que está
 vivo na base de dados, e deve ser tratada como tal antes de se avançar.
@@ -117,6 +117,10 @@ vivo na base de dados, e deve ser tratada como tal antes de se avançar.
 | R6 e exceções | `R6.1` bloqueio na frente · `R6.2` override justificado · `R6.3` fica registado · `C6.1` justificação repetida recusada |
 | Alertas | `N16` "ok" não chega · `N17` decisão com motivo é aceite · `F19` regra sem limiar avisa em vez de calar |
 | RLS | `L01` a `L06` isolamento por obra observado com o papel `authenticated` |
+| Leitura da guia (0022) | `LG01` a leitura regista-se · `LG02` diz que modelo a fez · `LG03` é append-only · `LG04` isolada por obra · `LG16` reenvio devolve o que lá está · `LG17` outro extraído é 409 · `LG18` só se lê fotografia de guia · `LG19` o extraído tem de ser objecto |
+| Proveniência derivada | `LG05` leitura de outra fotografia é recusada · `LG06` e `LG07` os quatro campos ficam `LIDO` · `LG08` registo igual ao lido é conforme · `LG11` corrigir um campo não contamina os outros · `LG14` campo por ler não entra · `LG15` guia sem leitura não afirma proveniência |
+| R9 · correcção sobre leitura ALTA | `LG09` o campo fica `CORRIGIDO` · `LG10` a guia desce a `COM_ALERTA` |
+| R10 · a classe do papel manda | `LG12` classe lida divergente torna a guia `NAO_CONFORME` mesmo com a classe do PAB escrita · `LG13` o alerta conta que a divergência veio da leitura |
 | Ledger | `G01` a cadeia fecha · `G02` a guia passou pelo ledger · `G03` a cadeia fecha em qualquer fuso |
 
 ## As 3 notas declaradas

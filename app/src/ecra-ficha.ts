@@ -37,6 +37,7 @@ import {
   lerEstadoSeccoes,
   lerFicha,
   lerFrentes,
+  lerGuia,
   lerGuias,
   lerItensInspecao,
   lerLinhasPreBetonagem,
@@ -45,11 +46,15 @@ import {
   NOME_DA_SECCAO,
   registarGuia,
   SECCOES_PRE_BETONAGEM,
+  type CampoLido,
   type Central,
+  type Confianca,
   type EstadoPab,
   type EstadoSeccao,
   type Ficha,
   type Guia,
+  type GuiaLida,
+  type Leitura,
   type ItemFicha,
   type LinhaFicha,
   type Obra,
@@ -219,6 +224,41 @@ function preencherCentrais(select: HTMLSelectElement, centrais: Central[]): void
   if (centrais.some((c) => c.id === escolhida)) select.value = escolhida
 }
 
+const NOME_DO_CAMPO: Record<string, string> = {
+  numero_guia: 'n.º',
+  volume_m3: 'volume',
+  classe_betao: 'classe',
+  data: 'data',
+}
+
+/**
+ * O que o fiscal precisa de saber sobre a origem dos valores desta guia.
+ *
+ * Não se resume a «lida» ou «manual»: um campo lido e depois alterado é a
+ * situação que mais interessa ver, e por isso é nomeada. A proveniência vem
+ * derivada do servidor — aqui só se lê.
+ */
+function etiquetasDeProveniencia(guia: Guia): { texto: string; classe: string }[] {
+  if (guia.proveniencia === null) {
+    return [{ texto: 'manual', classe: 'prov-manual' }]
+  }
+
+  const pares = Object.entries(guia.proveniencia)
+  const nomes = (estado: string): string =>
+    pares
+      .filter(([, v]) => v === estado)
+      .map(([k]) => NOME_DO_CAMPO[k] ?? k)
+      .join(', ')
+
+  const lidos = nomes('LIDO')
+  const corrigidos = nomes('CORRIGIDO')
+
+  return [
+    lidos === '' ? null : { texto: `lido: ${lidos}`, classe: 'prov-lido' },
+    corrigidos === '' ? null : { texto: `corrigido: ${corrigidos}`, classe: 'prov-corrigido' },
+  ].filter((e): e is { texto: string; classe: string } => e !== null)
+}
+
 /** A tabela de guias — a folha «Guias» do mapa de controlo, que é a fonte
  *  única de que tudo o resto agrega. */
 function desenharGuias(destino: HTMLElement, dados: Dados, aoVerFoto: (g: Guia) => void): void {
@@ -280,6 +320,18 @@ function desenharGuias(destino: HTMLElement, dados: Dados, aoVerFoto: (g: Guia) 
     const linha = document.createElement('div')
     linha.className = 'linha-doc linha-guia'
     linha.append(numero, corpo, lado)
+
+    // De onde vieram os valores. Uma guia registada antes da leitura existir
+    // não tem proveniência nenhuma e diz «manual» — que é a verdade sobre ela.
+    const origem = document.createElement('div')
+    origem.className = 'proveniencias'
+    for (const etiqueta of etiquetasDeProveniencia(guia)) {
+      const marca = document.createElement('span')
+      marca.className = `proveniencia ${etiqueta.classe}`
+      marca.textContent = etiqueta.texto
+      origem.append(marca)
+    }
+    linha.append(origem)
 
     if (guia.motivo_substituicao !== null) {
       const motivo = document.createElement('div')
@@ -528,35 +580,46 @@ export function montarEcraFicha(
                 </div>
               </div>
 
+              <!-- O que está a acontecer à fotografia, em voz alta: carregar,
+                   ler, ou a razão por que a leitura não deu. Um passo que
+                   demora dez segundos e não diz nada parece uma avaria. -->
+              <p id="estado-leitura" class="estado-leitura" hidden></p>
+
               <div class="campos">
                 <div class="linha-campos linha-3">
                   <div class="campo">
-                    <label for="numero-guia">N.º da guia</label>
+                    <label for="numero-guia">N.º da guia
+                      <span class="proveniencia" id="prov-numero" hidden></span></label>
                     <input id="numero-guia" class="mono" name="numero-guia" type="text" required
                            autocomplete="off" placeholder="118588">
                   </div>
                   <div class="campo">
                     <label for="central-guia">Central</label>
                     <select id="central-guia" name="central-guia" required></select>
+                    <span class="dica-papel" id="dica-central" hidden></span>
                   </div>
                   <div class="campo">
-                    <label for="volume-guia">Volume (m³)</label>
+                    <label for="volume-guia">Volume (m³)
+                      <span class="proveniencia" id="prov-volume" hidden></span></label>
                     <input id="volume-guia" class="mono" name="volume-guia" type="text" required
                            inputmode="decimal" autocomplete="off" placeholder="8,00">
                   </div>
                 </div>
                 <div class="linha-campos linha-3">
                   <div class="campo">
-                    <label for="classe-guia">Classe de betão</label>
+                    <label for="classe-guia">Classe de betão
+                      <span class="proveniencia" id="prov-classe" hidden></span></label>
                     <input id="classe-guia" class="mono" name="classe-guia" type="text" required
                            autocomplete="off" minlength="3">
                   </div>
                   <div class="campo">
                     <label for="data-guia">Data e hora da betonagem</label>
                     <input id="data-guia" class="mono" name="data-guia" type="datetime-local" required>
+                    <span class="dica-papel" id="dica-data" hidden></span>
                   </div>
                   <div class="campo">
-                    <label for="hora-carga">Hora de carga <span class="op">opcional</span></label>
+                    <label for="hora-carga">Hora de carga <span class="op">opcional</span>
+                      <span class="proveniencia" id="prov-carga" hidden></span></label>
                     <input id="hora-carga" class="mono" name="hora-carga" type="datetime-local">
                   </div>
                 </div>
@@ -571,6 +634,19 @@ export function montarEcraFicha(
                     <input id="temperatura-guia" class="mono" name="temperatura-guia" type="text"
                            inputmode="decimal" autocomplete="off" placeholder="22,5">
                   </div>
+                </div>
+              </div>
+
+              <!-- Só aparece quando houve leitura. Sem leitura, quem escreveu
+                   os valores foi a pessoa, e essa é a confirmação. Com leitura,
+                   os campos vêm preenchidos por uma máquina e alguém tem de
+                   dizer que confrontou com o papel — é a brecha C7. -->
+              <div class="campos" id="campo-confirmacao" hidden>
+                <div class="campo campo-largo">
+                  <label class="caixa" for="confirmo-leitura">
+                    <input id="confirmo-leitura" name="confirmo-leitura" type="checkbox">
+                    Confirmo que li a guia em papel e conferi estes valores
+                  </label>
                 </div>
               </div>
 
@@ -816,16 +892,193 @@ export function montarEcraFicha(
   const slumpGuia = destino.querySelector<HTMLInputElement>('#slump-guia')!
   const temperaturaGuia = destino.querySelector<HTMLInputElement>('#temperatura-guia')!
   const botaoGuia = destino.querySelector<HTMLButtonElement>('#botao-guia')!
+  const estadoLeitura = destino.querySelector<HTMLParagraphElement>('#estado-leitura')!
+  const campoConfirmacao = destino.querySelector<HTMLElement>('#campo-confirmacao')!
+  const confirmoLeitura = destino.querySelector<HTMLInputElement>('#confirmo-leitura')!
+  const dicaCentral = destino.querySelector<HTMLElement>('#dica-central')!
+  const dicaData = destino.querySelector<HTMLElement>('#dica-data')!
+  const provDe: Record<'numero' | 'volume' | 'classe' | 'carga', HTMLElement> = {
+    numero: destino.querySelector<HTMLElement>('#prov-numero')!,
+    volume: destino.querySelector<HTMLElement>('#prov-volume')!,
+    classe: destino.querySelector<HTMLElement>('#prov-classe')!,
+    carga: destino.querySelector<HTMLElement>('#prov-carga')!,
+  }
 
   // A classe pré-preenchida com a do PAB, e editável: o que veio pode não ser o
   // que se pediu, e é isso que o registo tem de poder dizer. Se divergir, o
   // servidor grava na mesma e marca a guia como não conforme — não se apaga.
   classeGuia.value = pab.classe_betao
 
+  // O estado da fotografia deste formulário. A fotografia carrega-se assim que
+  // é escolhida — não no submeter — porque a leitura precisa dela lá em cima e
+  // não faz sentido esperar pelo fim para começar a demorar.
+  let ficheiroCarregado: string | null = null
+  let leitura: Leitura | null = null
+
+  const dizer = (texto: string | null, classe = ''): void => {
+    estadoLeitura.textContent = texto ?? ''
+    estadoLeitura.className = `estado-leitura ${classe}`.trimEnd()
+    estadoLeitura.hidden = texto === null
+  }
+
+  /** Volta ao ponto de partida: nova fotografia, nova leitura, nada herdado da
+   *  anterior. Um campo pré-preenchido pela leitura de outra guia seria a pior
+   *  maneira possível de errar. */
+  const esquecerLeitura = (): void => {
+    leitura = null
+    campoConfirmacao.hidden = true
+    confirmoLeitura.checked = false
+    dicaCentral.hidden = true
+    dicaData.hidden = true
+    for (const marca of Object.values(provDe)) {
+      marca.hidden = true
+      marca.textContent = ''
+    }
+  }
+
+  const marcar = (
+    alvo: HTMLElement,
+    campo: { valor: unknown; confianca: Confianca } | undefined,
+  ): void => {
+    const confianca = campo?.confianca
+    const leu = campo !== undefined && campo.valor !== null && confianca !== undefined
+    alvo.hidden = false
+    alvo.textContent = !leu
+      ? 'não foi lido'
+      : confianca === 'ALTA'
+        ? 'lido · alta'
+        : `lido · ${confianca === 'MEDIA' ? 'média' : 'baixa'} — confira`
+    alvo.className = `proveniencia ${leu && confianca === 'ALTA' ? 'prov-alta' : 'prov-duvida'}`
+  }
+
+  /**
+   * Pré-preenche o que veio com confiança ALTA, e só isso.
+   *
+   * O que veio com MEDIA ou BAIXA fica em branco com o aviso ao lado: um campo
+   * preenchido convida a confirmar sem olhar, e é precisamente aí que a leitura
+   * deixaria de ser ajuda para passar a ser risco.
+   */
+  const aplicarLeitura = (lida: GuiaLida): void => {
+    // O ?. não é defensividade decorativa: um campo que o modelo não devolveu é
+    // um campo que não foi lido, e é assim que ele conta — em branco, com a
+    // marca ao lado. O que não pode acontecer é preencher às cegas.
+    const alta = <T>(campo: CampoLido<T> | undefined): T | null =>
+      campo?.confianca === 'ALTA' ? campo.valor : null
+
+    const numero = alta(lida.numero_guia)
+    if (numero !== null) numeroGuia.value = numero
+
+    const volume = alta(lida.volume_m3)
+    if (volume !== null) volumeGuia.value = volume.toFixed(2).replace('.', ',')
+
+    const classe = alta(lida.classe_betao)
+    if (classe !== null) classeGuia.value = classe
+
+    // A hora impressa na guia é a de carga, não a da descarga. Vai para o campo
+    // certo; a data e hora da betonagem continuam a ser afirmação de quem
+    // esteve lá, com o que o papel diz à vista para conferir.
+    const data = alta(lida.data)
+    const hora = alta(lida.hora)
+    if (data !== null && hora !== null) horaCarga.value = `${data}T${hora}`
+
+    marcar(provDe.numero, lida.numero_guia)
+    marcar(provDe.volume, lida.volume_m3)
+    marcar(provDe.classe, lida.classe_betao)
+    marcar(provDe.carga, lida.hora)
+
+    const central = lida.central_nome?.valor ?? null
+    dicaCentral.hidden = central === null
+    dicaCentral.textContent = central === null ? '' : `o papel diz: «${central}»`
+
+    const noPapel = [lida.data?.valor ?? null, lida.hora?.valor ?? null]
+      .filter((p) => p !== null)
+      .join(' às ')
+    dicaData.hidden = noPapel === ''
+    dicaData.textContent = noPapel === '' ? '' : `o papel diz: ${noPapel}`
+
+    campoConfirmacao.hidden = false
+  }
+
+  /** Carrega a fotografia e manda-a ler. A leitura pode falhar sem que isso
+   *  impeça o registo: o que se perde é o pré-preenchimento, e a guia entra
+   *  como manual — que é exactamente o que ela é nesse caso. */
+  const carregarELer = (ficheiro: File): void => {
+    if (ocupado) return
+    ocupado = true
+    erro.hidden = true
+    esquecerLeitura()
+    ficheiroCarregado = null
+    // Enquanto a fotografia sobe e é lida, o botão fica inerte: um clique que
+    // não fizesse nada seria pior do que um botão apagado. O estado anterior é
+    // guardado porque ele também está desactivado quando não há centrais.
+    const bloqueado = botaoGuia.disabled
+    botaoGuia.disabled = true
+    dizer('A carregar a fotografia…')
+
+    const origem = daGaleria.checked ? 'GALERIA' : 'CAMARA'
+    const porque = daGaleria.checked ? justificacao.value.trim() : null
+
+    carregarFotoGuia(obra.id, ficheiro, origem, porque)
+      .then((ficheiroId) => {
+        ficheiroCarregado = ficheiroId
+        dizer('A ler a guia…')
+        return lerGuia(ficheiroId)
+      })
+      .then((lida) => {
+        leitura = lida
+        aplicarLeitura(lida.extraido)
+        const nota = lida.extraido.nota_legibilidade
+        dizer(
+          'Guia lida. Confira campo a campo com o papel — o que não foi lido está em branco.' +
+            (nota === null ? '' : ` Nota do leitor: ${nota}`),
+          'leitura-ok',
+        )
+      })
+      .catch((causa: unknown) => {
+        // Nada é engolido: a frase do servidor aparece inteira, e diz-se o que
+        // fazer a seguir — que é diferente consoante o que falhou. Se a
+        // fotografia chegou a subir, o registo manual continua a funcionar; se
+        // não chegou, o submeter volta a tentar carregá-la.
+        const falhou = ficheiroCarregado === null ? 'A fotografia não subiu' : 'A leitura da guia não deu'
+        dizer(
+          `${falhou}: ${mensagemDeErro(causa)}\n` +
+            (ficheiroCarregado === null
+              ? 'Preencha os campos a partir do papel e carregue em Registar guia — a fotografia volta a subir.'
+              : 'Preencha os campos a partir do papel e registe — a guia fica marcada como manual.'),
+          'leitura-falhou',
+        )
+        esquecerLeitura()
+      })
+      .finally(() => {
+        ocupado = false
+        botaoGuia.disabled = bloqueado
+      })
+  }
+
   daGaleria.addEventListener('change', () => {
     campoJustificacao.hidden = !daGaleria.checked
     justificacao.required = daGaleria.checked
     if (!daGaleria.checked) justificacao.value = ''
+
+    // A origem viaja com a fotografia e fica gravada no ficheiro. Como a
+    // fotografia sobe assim que é escolhida, mudar a origem depois obriga a
+    // escolhê-la outra vez — recarregar os mesmos bytes com outro id bateria
+    // no INV3, e a mensagem falaria de duplicação onde o problema é outro.
+    if (foto.value !== '') {
+      foto.value = ''
+      esquecerLeitura()
+      ficheiroCarregado = null
+      dizer('A origem da fotografia mudou. Escolha a fotografia outra vez.')
+    }
+  })
+
+  // Uma fotografia nova é uma guia nova: o que estava lido deixa de valer.
+  foto.addEventListener('change', () => {
+    const ficheiro = foto.files?.[0]
+    esquecerLeitura()
+    ficheiroCarregado = null
+    dizer(null)
+    if (ficheiro !== undefined) carregarELer(ficheiro)
   })
 
   formaGuia.addEventListener('submit', (evento) => {
@@ -834,6 +1087,15 @@ export function montarEcraFicha(
     const ficheiro = foto.files?.[0]
     if (ficheiro === undefined) {
       mostrarErro('Escolha ou tire a fotografia da guia. Sem fotografia não há registo.')
+      return
+    }
+
+    if (leitura !== null && !confirmoLeitura.checked) {
+      mostrarErro(
+        'Estes valores foram lidos por uma máquina. Confirme que os conferiu com a guia em papel ' +
+          'antes de registar — é a assinatura de quem esteve lá.',
+      )
+      confirmoLeitura.focus()
       return
     }
 
@@ -861,13 +1123,14 @@ export function montarEcraFicha(
     const origem = daGaleria.checked ? 'GALERIA' : 'CAMARA'
     const porque = daGaleria.checked ? justificacao.value.trim() : null
 
-    botaoGuia.textContent = 'A carregar a fotografia…'
+    botaoGuia.textContent = 'A registar a guia…'
     executar(
       async () => {
-        // Duas viagens, por esta ordem e não ao contrário: a fotografia
-        // primeiro, porque o registo da guia exige um ficheiro já registado.
-        const ficheiroId = await carregarFotoGuia(obra.id, ficheiro, origem, porque)
-        botaoGuia.textContent = 'A registar a guia…'
+        // A fotografia carregou-se quando foi escolhida. Se esse carregamento
+        // falhou — sem rede, por exemplo — tenta-se aqui outra vez: é o
+        // caminho que existia antes da leitura e continua a ter de funcionar.
+        const ficheiroId =
+          ficheiroCarregado ?? (await carregarFotoGuia(obra.id, ficheiro, origem, porque))
         await registarGuia({
           pabId: pab.id,
           centralId: selectCentral.value,
@@ -879,12 +1142,18 @@ export function montarEcraFicha(
           horaCarga: horaCarga.value === '' ? null : new Date(horaCarga.value).toISOString(),
           slumpMm: slump.estado === 'ok' ? slump.valor : null,
           temperaturaC: temperatura.estado === 'ok' ? temperatura.valor : null,
+          // A leitura desta fotografia, ou nulo. A proveniência não vai daqui:
+          // é o servidor que a deriva comparando estes valores com o lido.
+          leituraId: leitura?.leituraId ?? null,
         })
       },
       () => {
         formaGuia.reset()
         classeGuia.value = pab.classe_betao
         campoJustificacao.hidden = true
+        esquecerLeitura()
+        ficheiroCarregado = null
+        dizer(null)
         recarregar()
       },
     )

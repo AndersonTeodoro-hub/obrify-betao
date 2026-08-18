@@ -677,6 +677,20 @@ export type Central = {
   ativa: boolean
 }
 
+/** Os quatro campos que o servidor compara com a leitura para derivar a
+ *  proveniência. Os outros — central, slump — são sempre manuais e por isso
+ *  nunca aparecem no mapa. */
+export type CampoComProveniencia = 'numero_guia' | 'volume_m3' | 'classe_betao' | 'data'
+
+/**
+ * O que o servidor derivou, campo a campo: LIDO quando o valor submetido é
+ * igual ao lido, CORRIGIDO quando difere. A ausência da chave é manual.
+ *
+ * Não é enviada pelo cliente — é calculada em gravar_guia (0022). Aqui só se
+ * lê, e é isso que a torna prova em vez de decoração.
+ */
+export type Proveniencia = Partial<Record<CampoComProveniencia, 'LIDO' | 'CORRIGIDO'>>
+
 export type Guia = {
   id: string
   pab_id: string
@@ -695,6 +709,8 @@ export type Guia = {
   recebido_em: string
   registado_por_fiscalizacao: boolean
   motivo_substituicao: string | null
+  leitura_id: string | null
+  proveniencia: Proveniencia | null
 }
 
 export async function lerCentrais(): Promise<Central[]> {
@@ -724,7 +740,7 @@ export async function criarCentral(designacao: string, prefixo: string | null): 
 export async function lerGuias(pabId: string): Promise<Guia[]> {
   const { data, error } = await betonagens()
     .from('guia_remessa')
-    .select('id, pab_id, numero_guia, central_id, data_hora_betonagem, hora_carga, volume_m3, classe_betao, slump_mm, temperatura_c, conformidade, ficheiro_id, recebido_em, registado_por_fiscalizacao, motivo_substituicao')
+    .select('id, pab_id, numero_guia, central_id, data_hora_betonagem, hora_carga, volume_m3, classe_betao, slump_mm, temperatura_c, conformidade, ficheiro_id, recebido_em, registado_por_fiscalizacao, motivo_substituicao, leitura_id, proveniencia')
     .eq('pab_id', pabId)
     .is('substituida_por_id', null)
     .order('data_hora_betonagem')
@@ -798,7 +814,7 @@ export async function carregarFotoGuia(
 export async function lerGuiasDaObra(obraId: string): Promise<Guia[]> {
   const { data, error } = await betonagens()
     .from('guia_remessa')
-    .select('id, pab_id, numero_guia, central_id, data_hora_betonagem, hora_carga, volume_m3, classe_betao, slump_mm, temperatura_c, conformidade, ficheiro_id, recebido_em, registado_por_fiscalizacao, motivo_substituicao')
+    .select('id, pab_id, numero_guia, central_id, data_hora_betonagem, hora_carga, volume_m3, classe_betao, slump_mm, temperatura_c, conformidade, ficheiro_id, recebido_em, registado_por_fiscalizacao, motivo_substituicao, leitura_id, proveniencia')
     .eq('obra_id', obraId)
     .is('substituida_por_id', null)
     .order('data_hora_betonagem', { ascending: false })
@@ -840,6 +856,95 @@ export async function enderecoDaFoto(ficheiroId: string): Promise<string> {
   return assinado.signedUrl
 }
 
+// ── leitura da guia por modelo de visão ─────────────────────────────────────
+
+export type Confianca = 'ALTA' | 'MEDIA' | 'BAIXA'
+
+/** Um campo lido: o valor, ou nulo quando o modelo não o conseguiu ler, e o
+ *  quanto ele próprio diz valer. Nunca se pré-preenche o que não seja ALTA. */
+export type CampoLido<T> = { valor: T | null; confianca: Confianca }
+
+/** O que a Edge Function devolve, tal como o modelo o produziu. Os campos que
+ *  a base compara vêm primeiro; o resto existe para a pessoa ver — e é onde
+ *  ficam a central impressa e tudo o que o esquema não previu. */
+export type GuiaLida = {
+  numero_guia: CampoLido<string>
+  volume_m3: CampoLido<number>
+  classe_betao: CampoLido<string>
+  data: CampoLido<string>
+  hora: CampoLido<string>
+  central_nome: CampoLido<string>
+  classe_exposicao: CampoLido<string>
+  classe_consistencia: CampoLido<string>
+  dmax_mm: CampoLido<number>
+  cliente_ou_obra: CampoLido<string>
+  matricula: CampoLido<string>
+  outros_campos: { rotulo: string; valor: string }[]
+  nota_legibilidade: string | null
+}
+
+export type Leitura = {
+  leituraId: string
+  modelo: string
+  extraido: GuiaLida
+  tokensEntrada: number
+  tokensSaida: number
+}
+
+/**
+ * Manda a fotografia já carregada a ler, e devolve o que o modelo leu.
+ *
+ * Não passa pelo PostgREST: a chave da API da Anthropic vive no ambiente da
+ * Edge Function e nunca chega ao telemóvel. O que vai daqui é o id do ficheiro
+ * — os bytes já lá estão, e é sobre os bytes guardados que o sha256 foi
+ * calculado.
+ *
+ * Falhar aqui não impede registar a guia: quem chama trata o erro, mostra-o, e
+ * o formulário continua a funcionar à mão. É essa a razão de a leitura ser um
+ * passo à parte do registo.
+ */
+export async function lerGuia(ficheiroId: string): Promise<Leitura> {
+  const resposta = await fetch(`${urlDasFuncoes}/ler-guia`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${await tokenDaSessao()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ ficheiro_id: ficheiroId }),
+  })
+
+  const texto = await resposta.text()
+  if (!resposta.ok) {
+    // A frase do servidor sobe inteira, como no carregamento da fotografia.
+    let corpo: unknown = texto
+    try {
+      corpo = JSON.parse(texto)
+    } catch {
+      /* não era JSON: fica o texto */
+    }
+    throw new Error(mensagemDeErro(corpo))
+  }
+
+  const corpo = JSON.parse(texto) as {
+    leitura_id?: string
+    modelo?: string
+    extraido?: GuiaLida
+    tokens_entrada?: number
+    tokens_saida?: number
+  }
+  if (typeof corpo.leitura_id !== 'string' || typeof corpo.extraido !== 'object') {
+    throw new Error(`A leitura não devolveu o que devia. Veio: ${texto}`)
+  }
+
+  return {
+    leituraId: corpo.leitura_id,
+    modelo: String(corpo.modelo ?? ''),
+    extraido: corpo.extraido,
+    tokensEntrada: Number(corpo.tokens_entrada ?? 0),
+    tokensSaida: Number(corpo.tokens_saida ?? 0),
+  }
+}
+
 export type NovaGuia = {
   pabId: string
   centralId: string
@@ -851,6 +956,10 @@ export type NovaGuia = {
   horaCarga: string | null
   slumpMm: number | null
   temperaturaC: number | null
+  /** A leitura desta fotografia, quando houve uma. O servidor compara os campos
+   *  com ela e deriva a proveniência; nulo é registo manual. Não se envia
+   *  proveniência nenhuma daqui — seria uma afirmação sem prova. */
+  leituraId: string | null
 }
 
 /**
@@ -878,6 +987,7 @@ export async function registarGuia(dados: NovaGuia): Promise<void> {
     p_hora_carga: dados.horaCarga,
     p_slump_mm: dados.slumpMm,
     p_temperatura_c: dados.temperaturaC,
+    p_leitura_id: dados.leituraId,
   })
   if (error) throw error
 }

@@ -1112,6 +1112,253 @@ begin
     'true', 'D06 · a correção reutiliza a fotografia original, sem a recarregar');
 
   -- ══════════════════════════════════════════════════════════════════════════
+  -- Leitura da guia · o que o modelo leu, e a proveniência que daí se deriva
+  --
+  -- A questão que este bloco responde é uma só: quem escreveu os valores desta
+  -- guia? Até à 0022 a resposta era sempre «o empreiteiro», e por isso as
+  -- regras que comparavam com o PAB comparavam com o que ele escreveu. Agora há
+  -- uma segunda fonte — a fotografia lida — e o servidor compara as duas.
+  -- ══════════════════════════════════════════════════════════════════════════
+
+  perform pg_temp.actor(k_empr);
+
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'fich7', f.id from betonagens.registar_ficheiro(
+      '30000000-0000-4000-8000-000000000007',
+      (select valor from ctx where chave='obra1'),
+      'GUIA', 'CAMARA', 'guias/2602/118601.jpg',
+      sha256(convert_to('fotografia-da-guia-118601','UTF8')), 151900, 'image/jpeg') f
+  $q$, 'LG00 · fotografia da guia 118601 registada');
+
+  -- O extraído entra tal como o modelo o produziu: valor e confiança por campo.
+  -- A data é construída a partir do mesmo instante que a guia vai declarar, para
+  -- o teste dizer respeito à regra e não ao dia em que corre.
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'leitura1', l.id from betonagens.registar_leitura_guia(
+      '50000000-0000-4000-8000-000000000001',
+      (select valor from ctx where chave='fich7'),
+      'claude-opus-5',
+      jsonb_build_object(
+        'numero_guia',  jsonb_build_object('valor', '118601',  'confianca', 'ALTA'),
+        'volume_m3',    jsonb_build_object('valor', 8,         'confianca', 'ALTA'),
+        'classe_betao', jsonb_build_object('valor', 'C30/37',  'confianca', 'ALTA'),
+        'data',         jsonb_build_object(
+                          'valor', to_char((now() - interval '40 hours')
+                                           at time zone 'Europe/Lisbon', 'YYYY-MM-DD'),
+                          'confianca', 'ALTA'),
+        'central_nome', jsonb_build_object('valor', 'BETAO LIZ - LAGOS', 'confianca', 'ALTA')),
+      5200, 380) l
+  $q$, 'LG01 · leitura da fotografia registada');
+
+  r := r || pg_temp.vale($q$
+    select l.modelo from betonagens.leitura_guia l
+     where l.id = (select valor from ctx where chave='leitura1') $q$,
+    'claude-opus-5', 'LG02 · a leitura diz que modelo a fez');
+
+  -- A leitura é prova: não se emenda. Corrige-se lendo outra vez.
+  r := r || pg_temp.atira($q$
+    update betonagens.leitura_guia set modelo = 'outro-qualquer'
+     where id = (select valor from ctx where chave='leitura1')
+  $q$, 'PT403', 'LG03 · leitura_guia é append-only');
+
+  r := r || pg_temp.vale_como($q$
+    select count(*)::text from betonagens.leitura_guia $q$,
+    '0', 'LG04 · empreiteiro de outra obra não vê leitura nenhuma', k_empr2);
+
+  -- A recusa estrutural: a proveniência tem de vir da fotografia que se está a
+  -- registar. Sem isto, bastava apontar para a leitura de uma guia conforme.
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'fich8', f.id from betonagens.registar_ficheiro(
+      '30000000-0000-4000-8000-000000000008',
+      (select valor from ctx where chave='obra1'),
+      'GUIA', 'CAMARA', 'guias/2602/118602.jpg',
+      sha256(convert_to('fotografia-da-guia-118602','UTF8')), 149800, 'image/jpeg') f
+  $q$, 'LG05a · segunda fotografia registada');
+
+  r := r || pg_temp.atira($q$
+    select betonagens.registar_guia(
+      gen_random_uuid(), (select valor from ctx where chave='pab1'),
+      (select valor from ctx where chave='central'),
+      '118602', now() - interval '40 hours', 8.00, 'C30/37',
+      (select valor from ctx where chave='fich8'),
+      now() - interval '1 hour', 'DISP-EMPREIT-001', 2210,
+      p_leitura_id => (select valor from ctx where chave='leitura1'))
+  $q$, 'PT422', 'LG05 · uma leitura de outra fotografia é recusada');
+
+  -- ── o caminho feliz: o registo bate certo com o papel ─────────────────────
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'guia_lida', g.id from betonagens.registar_guia(
+      '20000000-0000-4000-8000-000000000020',
+      (select valor from ctx where chave='pab1'),
+      (select valor from ctx where chave='central'),
+      '118601', now() - interval '40 hours', 8.00, 'C30/37',
+      (select valor from ctx where chave='fich7'),
+      now() - interval '1 hour', 'DISP-EMPREIT-001', 2200,
+      p_leitura_id => (select valor from ctx where chave='leitura1')) g
+  $q$, 'LG06 · guia registada com a leitura da própria fotografia');
+
+  r := r || pg_temp.vale($q$
+    select (g.proveniencia = jsonb_build_object(
+              'numero_guia','LIDO','volume_m3','LIDO','classe_betao','LIDO','data','LIDO'))::text
+      from betonagens.guia_remessa g
+     where g.id = (select valor from ctx where chave='guia_lida') $q$,
+    'true', 'LG07 · os quatro campos ficaram LIDO, derivados pelo servidor');
+
+  r := r || pg_temp.vale($q$
+    select g.conformidade::text from betonagens.guia_remessa g
+     where g.id = (select valor from ctx where chave='guia_lida') $q$,
+    'CONFORME', 'LG08 · registo igual ao lido não levanta nada');
+
+  -- ── R9 · corrigir por cima de uma leitura de confiança alta ───────────────
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'leitura2', l.id from betonagens.registar_leitura_guia(
+      '50000000-0000-4000-8000-000000000002',
+      (select valor from ctx where chave='fich8'),
+      'claude-opus-5',
+      jsonb_build_object(
+        'numero_guia',  jsonb_build_object('valor', '118602', 'confianca', 'ALTA'),
+        'volume_m3',    jsonb_build_object('valor', 8,        'confianca', 'ALTA'),
+        'classe_betao', jsonb_build_object('valor', 'C30/37', 'confianca', 'ALTA'),
+        'data',         jsonb_build_object(
+                          'valor', to_char((now() - interval '39 hours')
+                                           at time zone 'Europe/Lisbon', 'YYYY-MM-DD'),
+                          'confianca', 'ALTA')),
+      5100, 360) l
+  $q$, 'LG09a · leitura da segunda fotografia registada');
+
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'guia_corrigida', g.id from betonagens.registar_guia(
+      '20000000-0000-4000-8000-000000000021',
+      (select valor from ctx where chave='pab1'),
+      (select valor from ctx where chave='central'),
+      '118602', now() - interval '39 hours', 9.00, 'C30/37',
+      (select valor from ctx where chave='fich8'),
+      now() - interval '1 hour', 'DISP-EMPREIT-001', 2201,
+      p_leitura_id => (select valor from ctx where chave='leitura2')) g
+  $q$, 'LG09b · guia registada com 9,00 m3 onde o papel diz 8,00');
+
+  r := r || pg_temp.vale($q$
+    select g.proveniencia ->> 'volume_m3' from betonagens.guia_remessa g
+     where g.id = (select valor from ctx where chave='guia_corrigida') $q$,
+    'CORRIGIDO', 'LG09 · o volume alterado fica CORRIGIDO, não LIDO');
+
+  r := r || pg_temp.vale($q$
+    select g.conformidade::text from betonagens.guia_remessa g
+     where g.id = (select valor from ctx where chave='guia_corrigida') $q$,
+    'COM_ALERTA', 'LG10 · R9 · corrigir sobre leitura ALTA baixa a conformidade');
+
+  r := r || pg_temp.vale($q$
+    select g.proveniencia ->> 'numero_guia' from betonagens.guia_remessa g
+     where g.id = (select valor from ctx where chave='guia_corrigida') $q$,
+    'LIDO', 'LG11 · a correcção de um campo não contamina os outros');
+
+  -- ── R10 · a classe do papel manda, mesmo escrevendo a do PAB ──────────────
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'fich9', f.id from betonagens.registar_ficheiro(
+      '30000000-0000-4000-8000-000000000009',
+      (select valor from ctx where chave='obra1'),
+      'GUIA', 'CAMARA', 'guias/2602/118603.jpg',
+      sha256(convert_to('fotografia-da-guia-118603','UTF8')), 148700, 'image/jpeg') f
+  $q$, 'LG12a · terceira fotografia registada');
+
+  -- Classe lida com confiança ALTA e diferente da do PAB; a data ilegível, para
+  -- provar de caminho que um campo por ler não entra na proveniência.
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'leitura3', l.id from betonagens.registar_leitura_guia(
+      '50000000-0000-4000-8000-000000000003',
+      (select valor from ctx where chave='fich9'),
+      'claude-opus-5',
+      jsonb_build_object(
+        'numero_guia',  jsonb_build_object('valor', '118603', 'confianca', 'ALTA'),
+        'volume_m3',    jsonb_build_object('valor', 8,        'confianca', 'ALTA'),
+        'classe_betao', jsonb_build_object('valor', 'C25/30', 'confianca', 'ALTA'),
+        'data',         jsonb_build_object('valor', null::text, 'confianca', 'BAIXA')),
+      5000, 350) l
+  $q$, 'LG12b · leitura com classe divergente e data ilegível');
+
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'guia_classe', g.id from betonagens.registar_guia(
+      '20000000-0000-4000-8000-000000000022',
+      (select valor from ctx where chave='pab1'),
+      (select valor from ctx where chave='central'),
+      '118603', now() - interval '38 hours', 8.00, 'C30/37',
+      (select valor from ctx where chave='fich9'),
+      now() - interval '1 hour', 'DISP-EMPREIT-001', 2202,
+      p_leitura_id => (select valor from ctx where chave='leitura3')) g
+  $q$, 'LG12c · guia registada com a classe do PAB, contra o que o papel diz');
+
+  r := r || pg_temp.vale($q$
+    select g.conformidade::text from betonagens.guia_remessa g
+     where g.id = (select valor from ctx where chave='guia_classe') $q$,
+    'NAO_CONFORME', 'LG12 · R10 · a classe lida manda, mesmo escrevendo a do PAB');
+
+  r := r || pg_temp.vale($q$
+    select (a.mensagem like 'R10 %')::text from betonagens.alerta a
+     where a.tipo = 'CLASSE_DIVERGENTE'
+       and a.guia_id = (select valor from ctx where chave='guia_classe') $q$,
+    'true', 'LG13 · o alerta conta a história certa: a divergência veio da leitura');
+
+  r := r || pg_temp.vale($q$
+    select (g.proveniencia ? 'data')::text from betonagens.guia_remessa g
+     where g.id = (select valor from ctx where chave='guia_classe') $q$,
+    'false', 'LG14 · campo que o modelo não leu não entra na proveniência');
+
+  -- ── sem leitura, tudo manual ──────────────────────────────────────────────
+  r := r || pg_temp.vale($q$
+    select (g.leitura_id is null and g.proveniencia is null)::text
+      from betonagens.guia_remessa g
+     where g.id = (select valor from ctx where chave='guia2') $q$,
+    'true', 'LG15 · uma guia sem leitura não afirma proveniência nenhuma');
+
+  -- ── idempotência e recusas do registo da leitura ──────────────────────────
+  r := r || pg_temp.corre($q$
+    select betonagens.registar_leitura_guia(
+      '50000000-0000-4000-8000-000000000003',
+      (select valor from ctx where chave='fich9'),
+      'claude-opus-5',
+      jsonb_build_object(
+        'numero_guia',  jsonb_build_object('valor', '118603', 'confianca', 'ALTA'),
+        'volume_m3',    jsonb_build_object('valor', 8,        'confianca', 'ALTA'),
+        'classe_betao', jsonb_build_object('valor', 'C25/30', 'confianca', 'ALTA'),
+        'data',         jsonb_build_object('valor', null::text, 'confianca', 'BAIXA')),
+      5000, 350)
+  $q$, 'LG16 · a mesma leitura reenviada devolve o que já lá está');
+
+  r := r || pg_temp.atira($q$
+    select betonagens.registar_leitura_guia(
+      '50000000-0000-4000-8000-000000000003',
+      (select valor from ctx where chave='fich9'),
+      'claude-opus-5',
+      jsonb_build_object(
+        'numero_guia', jsonb_build_object('valor', '999999', 'confianca', 'ALTA')),
+      5000, 350)
+  $q$, 'PT409', 'LG17 · a mesma chave com outro extraído é conflito, não sobreposição');
+
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'fich_impresso', f.id from betonagens.registar_ficheiro(
+      '30000000-0000-4000-8000-00000000000a',
+      (select valor from ctx where chave='obra1'),
+      'PAB_IMPRESSO', 'CAMARA', 'guias/2602/impresso.jpg',
+      sha256(convert_to('impresso-assinado','UTF8')), 90000, 'image/jpeg') f
+  $q$, 'LG18a · ficheiro que não é guia registado');
+
+  r := r || pg_temp.atira($q$
+    select betonagens.registar_leitura_guia(
+      gen_random_uuid(),
+      (select valor from ctx where chave='fich_impresso'),
+      'claude-opus-5',
+      jsonb_build_object('numero_guia', jsonb_build_object('valor','1','confianca','ALTA')),
+      100, 100)
+  $q$, 'PT422', 'LG18 · só se lê o que é fotografia de guia');
+
+  r := r || pg_temp.atira($q$
+    select betonagens.registar_leitura_guia(
+      gen_random_uuid(),
+      (select valor from ctx where chave='fich9'),
+      'claude-opus-5', '[]'::jsonb, 100, 100)
+  $q$, 'PT422', 'LG19 · o extraído tem de ser um objecto, não uma lista');
+
+  -- ══════════════════════════════════════════════════════════════════════════
   -- RLS · isolamento por obra ao nível da base de dados
   -- ══════════════════════════════════════════════════════════════════════════
 

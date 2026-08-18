@@ -758,6 +758,56 @@ button.linha-doc[aria-current='true']:hover { background: var(--ddn-claro); }
 .conf-COM_ALERTA  { background: var(--hivis-claro); color: #6B4B00; }
 .conf-NAO_CONFORME{ background: var(--ferro-claro); color: var(--ferro); }
 
+/* ── proveniência dos valores ─────────────────────────────────────────────── */
+/* De onde veio cada campo: lido pelo modelo, corrigido por cima do lido, ou
+   escrito à mão. Discreto no formulário, à vista na lista do fiscal — é lá que
+   a pergunta «quem escreveu isto?» se faz. */
+.proveniencia {
+  display: inline-block;
+  padding: 0.1rem 0.35rem;
+  font-family: ui-monospace, "Cascadia Mono", "Segoe UI Mono", monospace;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  white-space: nowrap;
+  border-radius: 2px;
+}
+/* No formulário: verde quando o modelo tem certeza, âmbar quando não tem. */
+.prov-alta   { background: var(--ddn-claro);   color: var(--ddn-esc); }
+.prov-duvida { background: var(--hivis-claro); color: #6B4B00; }
+
+/* Na lista: a correcção sobre um valor lido é o que o fiscal procura. */
+.proveniencias { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.4rem; }
+.prov-lido      { background: var(--ddn-claro);   color: var(--ddn-esc); }
+.prov-corrigido { background: var(--hivis-claro); color: #6B4B00; }
+.prov-manual    { background: #EAE8E3;            color: var(--tinta-2); }
+
+/* O que o papel diz, ao lado do campo que a pessoa preenche. Não é
+   pré-preenchimento: é o que ela tem de conferir com os olhos. */
+.dica-papel {
+  display: block;
+  margin-top: 0.3rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+  color: var(--tinta-2);
+}
+
+/* O estado da leitura, entre a fotografia e os campos. Um passo que demora
+   dez segundos e não diz nada parece uma avaria. */
+.estado-leitura {
+  margin: 0 0 0.75rem;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: var(--tinta-2);
+  background: #F3F1EC;
+  border-radius: var(--r);
+}
+.estado-leitura.leitura-ok     { color: var(--ddn-esc); background: var(--ddn-claro); }
+.estado-leitura.leitura-falhou { color: #6B4B00;        background: var(--hivis-claro); }
+
 .btn-foto {
   padding: 0.25rem 0.5rem;
   font: inherit;
