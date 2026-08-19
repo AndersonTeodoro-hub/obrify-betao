@@ -1585,9 +1585,26 @@ begin
   -- RLS · isolamento por obra ao nível da base de dados
   -- ══════════════════════════════════════════════════════════════════════════
 
+  -- Esta linha esperava zero, e passava porque a obra 2 não tinha guia nenhuma.
+  -- Deixou de ter: a FQ00 precisou de uma para poder fechar a betonagem do PAB 3
+  -- (R8 · não se fecha uma betonagem sem guias) e a emissão da ficha exige a
+  -- betonagem fechada. O zero era um retrato do fixture, não a regra — e a
+  -- regra é que ele não vê guias FORA da obra dele.
+  --
+  -- A obra identifica-se pelo código e não pelo id, pela mesma razão da L02: a
+  -- consulta corre com o papel authenticated, que não tem privilégio nenhum
+  -- sobre a tabela temporária ctx.
   r := r || pg_temp.vale_como($q$
-    select count(*)::text from betonagens.guia_remessa $q$,
-    '0', 'L01 · empreiteiro de outra obra não vê guia nenhuma', k_empr2);
+    select count(*)::text from betonagens.guia_remessa g
+     where g.obra_id not in (select o.id from betonagens.obra o where o.codigo = '2603') $q$,
+    '0', 'L01 · empreiteiro de outra obra não vê guias fora da obra dele', k_empr2);
+
+  -- E o outro lado, para a linha de cima não poder passar por não se ver nada:
+  -- a guia da obra dele existe e é essa que ele vê.
+  r := r || pg_temp.vale_como($q$
+    select string_agg(g.numero_guia, ',' order by g.numero_guia)
+      from betonagens.guia_remessa g $q$,
+    '118700', 'L01b · e vê a da obra dele, a que a FQ00 registou', k_empr2);
 
   -- Presa ao PAB 3, o da obra 2. Identificado pelo elemento e não pelo id
   -- porque esta consulta corre com o papel authenticated, que não tem
