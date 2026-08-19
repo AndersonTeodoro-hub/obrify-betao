@@ -1,8 +1,9 @@
 {
   "lock": false,
+  "nodeModulesDir": "auto",
   "fmt": { "singleQuote": true, "semiColons": false, "lineWidth": 96 },
   "tasks": {
-    "verificar": "deno check carregar-guia/index.ts carregar-guia/carregar_test.ts ler-guia/index.ts ler-guia/ler_test.ts",
-    "testar": "deno test carregar-guia/ ler-guia/"
+    "verificar": "deno check carregar-guia/index.ts carregar-guia/carregar_test.ts ler-guia/index.ts ler-guia/ler_test.ts gerar-fcq/index.ts gerar-fcq/gerar_test.ts",
+    "testar": "deno test carregar-guia/ ler-guia/ gerar-fcq/"
   }
 }

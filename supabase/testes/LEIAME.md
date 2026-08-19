@@ -22,12 +22,12 @@ fim. Ordena-se por número, não por estado, para se poder ler como um percurso.
 n    estado   teste
 1    ok       E01 · esquema betonagens existe
 ...
-999999 RESUMO  172 verificações · 172 ok · 0 falhas · 3 notas declaradas
+999999 RESUMO  195 verificações · 195 ok · 0 falhas · 3 notas declaradas
 ```
 
 `ok` passou · `FALHA` não passou · `nota` é uma omissão declarada, não uma falha.
 
-A suite tem **172 verificações e 3 notas**. As notas não entram na contagem de
+A suite tem **195 verificações e 3 notas**. As notas não entram na contagem de
 verificações porque não verificam nada: registam decisões, e estão explicadas
 no fim deste documento.
 
@@ -49,7 +49,7 @@ diferentes. Não deixa rasto e não precisa de limpeza.
 
 ### Base de dados vazia (migrações por aplicar)
 
-**172 falhas e 3 notas.** Nenhuma verificação passa, e é a falha correta: cada
+**195 falhas e 3 notas.** Nenhuma verificação passa, e é a falha correta: cada
 linha diz o que faltou.
 
 - as verificações de estrutura devolvem `esperava [true], obteve [NULO]` ou
@@ -66,9 +66,9 @@ Nenhuma verificação passa por acidente numa base vazia. Foi para isso que toda
 as comparações são positivas (`= 'true'`, `= 'sem INSERT'`) em vez de negativas:
 um `not exists` sobre uma tabela que não existe passaria pela razão errada.
 
-### Migrações 0001 a 0022 aplicadas
+### Migrações 0001 a 0023 aplicadas
 
-**172 ok, 0 falhas, 3 notas.**
+**195 ok, 0 falhas, 3 notas.**
 
 Qualquer `FALHA` aqui é um desvio entre o que está no repositório e o que está
 vivo na base de dados, e deve ser tratada como tal antes de se avançar.
@@ -121,6 +121,8 @@ vivo na base de dados, e deve ser tratada como tal antes de se avançar.
 | Proveniência derivada | `LG05` leitura de outra fotografia é recusada · `LG06` e `LG07` os quatro campos ficam `LIDO` · `LG08` registo igual ao lido é conforme · `LG11` corrigir um campo não contamina os outros · `LG14` campo por ler não entra · `LG15` guia sem leitura não afirma proveniência |
 | R9 · correcção sobre leitura ALTA | `LG09` o campo fica `CORRIGIDO` · `LG10` a guia desce a `COM_ALERTA` |
 | R10 · a classe do papel manda | `LG12` classe lida divergente torna a guia `NAO_CONFORME` mesmo com a classe do PAB escrita · `LG13` o alerta conta que a divergência veio da leitura |
+| Emissão da FCQ (0023) | `FQ01` fecha a betonagem · `FQ03` emite · `FQ04` a ficha passa a EMITIDA · `FQ05` o PAB passa a FCQ_FECHADA · `FQ06` e `FQ17` conformidade derivada dos itens (CONFORME / NAO_CONFORME) · `FQ08` reenvio devolve a mesma versão · `FQ09` versão fora da sequência é 409 · `FQ14` só a fiscalização emite · `FQ15` só um PDF de ficha serve · `FQ18` o impresso fica guardado com a versão · `FQ19` emitida, a ficha é read-only · `FQ20` sai o evento |
+| D4 · reemissão | `FQ10` sem motivo é recusada · `FQ11` com motivo passa · `FQ12` a versão anterior não desaparece |
 | Ledger | `G01` a cadeia fecha · `G02` a guia passou pelo ledger · `G03` a cadeia fecha em qualquer fuso |
 
 ## As 3 notas declaradas

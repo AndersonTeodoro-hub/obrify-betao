@@ -1397,6 +1397,191 @@ begin
   $q$, 'PT422', 'LG19 · o extraído tem de ser um objecto, não uma lista');
 
   -- ══════════════════════════════════════════════════════════════════════════
+  -- Emissão da FCQ · o impresso preenchido passa a versão, e o PAB fecha
+  --
+  -- O PDF em si é feito pela Edge Function gerar-fcq, que não corre em SQL. O
+  -- que aqui se prova é o que a base decide: quem emite, quando, com que
+  -- documento, com que conformidade, e o que acontece ao PAB a seguir.
+  --
+  -- Dois caminhos, de propósito: a ficha do PAB 3, com os 20 critérios
+  -- conformes, e a do PAB 1, que ficou com uma não conformidade por resolver
+  -- desde a N14a. É a diferença entre CONFORME e NAO_CONFORME, e é derivada —
+  -- não é declarada por quem emite.
+  -- ══════════════════════════════════════════════════════════════════════════
+
+  perform pg_temp.actor(k_empr);
+
+  -- R8 · não se fecha uma betonagem sem guias, e sem fechar não se emite
+  r := r || pg_temp.corre($q$
+    select betonagens.registar_guia(
+      '20000000-0000-4000-8000-000000000030',
+      (select valor from ctx where chave='pab3'),
+      (select valor from ctx where chave='central'),
+      '118700', now() - interval '40 hours', 12.00, 'C30/37',
+      (select valor from ctx where chave='fich4'),
+      now() - interval '1 hour', 'DISP-EMPREIT-001', 2300)
+  $q$, 'FQ00 · guia registada no PAB da segunda obra');
+
+  r := r || pg_temp.corre($q$
+    select betonagens.fechar_betonagem((select valor from ctx where chave='pab3'),
+      now() - interval '20 minutes', 'DISP-EMPREIT-001', 2301)
+  $q$, 'FQ01 · betonagem do PAB 3 fechada');
+
+  perform pg_temp.actor(k_fiscal);
+
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'pdf3', f.id from betonagens.registar_ficheiro(
+      '31000000-0000-4000-8000-000000000003',
+      (select valor from ctx where chave='obra2'),
+      'FCQ_PDF', 'GERADO', 'fcq/2603/fcq3-v1.pdf',
+      sha256(convert_to('pdf-da-fcq-3-v1','UTF8')), 73177, 'application/pdf') f
+  $q$, 'FQ02 · PDF da ficha registado como GERADO');
+
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'versao3', v.id from betonagens.emitir_fcq(
+      (select valor from ctx where chave='fcq3'), 1,
+      (select valor from ctx where chave='pdf3'),
+      sha256(convert_to('pdf-da-fcq-3-v1','UTF8')),
+      jsonb_build_object('n_obra','2603','numero','033 / 002')) v
+  $q$, 'FQ03 · ficha do PAB 3 emitida');
+
+  r := r || pg_temp.vale($q$
+    select f.estado::text from betonagens.fcq f
+     where f.id = (select valor from ctx where chave='fcq3') $q$,
+    'EMITIDA', 'FQ04 · a ficha passa a EMITIDA');
+
+  r := r || pg_temp.vale($q$
+    select p.estado::text from betonagens.pab p
+     where p.id = (select valor from ctx where chave='pab3') $q$,
+    'FCQ_FECHADA', 'FQ05 · o PAB fecha quando a ficha dele sai');
+
+  -- A conformidade não é parâmetro: os 20 critérios estão conformes, logo a
+  -- ficha está conforme. Se um dia alguém a passar a parâmetro, esta linha cai.
+  r := r || pg_temp.vale($q$
+    select v.conformidade::text from betonagens.fcq_versao v
+     where v.id = (select valor from ctx where chave='versao3') $q$,
+    'CONFORME', 'FQ06 · conformidade derivada dos itens, não declarada');
+
+  r := r || pg_temp.vale($q$
+    select v.observacoes from betonagens.fcq_versao v
+     where v.id = (select valor from ctx where chave='versao3') $q$,
+    '', 'FQ07 · sem observações no PAB, a ficha sai com o campo vazio');
+
+  -- Reenviar a mesma emissão depois de uma falha de rede não cria versão nova.
+  r := r || pg_temp.vale($q$
+    select (v.id = (select valor from ctx where chave='versao3'))::text
+      from betonagens.emitir_fcq(
+        (select valor from ctx where chave='fcq3'), 1,
+        (select valor from ctx where chave='pdf3'),
+        sha256(convert_to('pdf-da-fcq-3-v1','UTF8')),
+        jsonb_build_object('n_obra','2603','numero','033 / 002')) v $q$,
+    'true', 'FQ08 · a mesma versão reenviada devolve a que já existe');
+
+  r := r || pg_temp.atira($q$
+    select betonagens.emitir_fcq(
+      (select valor from ctx where chave='fcq3'), 5,
+      (select valor from ctx where chave='pdf3'),
+      sha256(convert_to('pdf-da-fcq-3-v1','UTF8')),
+      '{}'::jsonb, 'Motivo suficientemente longo para a regra D4 passar.')
+  $q$, 'PT409', 'FQ09 · uma versão fora da sequência é recusada');
+
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'pdf3b', f.id from betonagens.registar_ficheiro(
+      '31000000-0000-4000-8000-000000000004',
+      (select valor from ctx where chave='obra2'),
+      'FCQ_PDF', 'GERADO', 'fcq/2603/fcq3-v2.pdf',
+      sha256(convert_to('pdf-da-fcq-3-v2','UTF8')), 73180, 'application/pdf') f
+  $q$, 'FQ10a · segundo PDF registado');
+
+  r := r || pg_temp.atira($q$
+    select betonagens.emitir_fcq(
+      (select valor from ctx where chave='fcq3'), 2,
+      (select valor from ctx where chave='pdf3b'),
+      sha256(convert_to('pdf-da-fcq-3-v2','UTF8')), '{}'::jsonb)
+  $q$, 'PT422', 'FQ10 · D4 · reemitir sem motivo escrito é recusado');
+
+  r := r || pg_temp.corre($q$
+    select betonagens.emitir_fcq(
+      (select valor from ctx where chave='fcq3'), 2,
+      (select valor from ctx where chave='pdf3b'),
+      sha256(convert_to('pdf-da-fcq-3-v2','UTF8')), '{}'::jsonb,
+      'Primeiro documento ilegivel no arquivo do dono de obra; reemitido igual.')
+  $q$, 'FQ11 · D4 · com motivo escrito, a reemissão passa');
+
+  r := r || pg_temp.vale($q$
+    select count(*)::text from betonagens.fcq_versao v
+     where v.fcq_id = (select valor from ctx where chave='fcq3') $q$,
+    '2', 'FQ12 · a versão anterior não desaparece: ficam as duas');
+
+  -- ── o PAB 1, com a não conformidade que a N14a deixou por resolver ────────
+  perform pg_temp.actor(k_empr);
+
+  r := r || pg_temp.corre($q$
+    select betonagens.fechar_betonagem((select valor from ctx where chave='pab1'),
+      now() - interval '10 minutes', 'DISP-EMPREIT-001', 2310)
+  $q$, 'FQ13 · betonagem do PAB 1 fechada');
+
+  r := r || pg_temp.atira($q$
+    select betonagens.emitir_fcq(
+      (select valor from ctx where chave='fcq1'), 1,
+      (select valor from ctx where chave='fich1'),
+      sha256(convert_to('seja-o-que-for','UTF8')), '{}'::jsonb)
+  $q$, 'PT403', 'FQ14 · o empreiteiro não emite a ficha da fiscalização');
+
+  perform pg_temp.actor(k_fiscal);
+
+  -- A fotografia de uma guia não é uma FCQ, por muito que seja um ficheiro da
+  -- mesma obra.
+  r := r || pg_temp.atira($q$
+    select betonagens.emitir_fcq(
+      (select valor from ctx where chave='fcq1'), 1,
+      (select valor from ctx where chave='fich1'),
+      sha256(convert_to('fotografia-da-guia-118588','UTF8')), '{}'::jsonb)
+  $q$, 'PT422', 'FQ15 · só um PDF de ficha serve de documento emitido');
+
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'pdf1', f.id from betonagens.registar_ficheiro(
+      '31000000-0000-4000-8000-000000000001',
+      (select valor from ctx where chave='obra1'),
+      'FCQ_PDF', 'GERADO', 'fcq/2602/fcq1-v1.pdf',
+      sha256(convert_to('pdf-da-fcq-1-v1','UTF8')), 74000, 'application/pdf') f
+  $q$, 'FQ16a · PDF da ficha do PAB 1 registado');
+
+  r := r || pg_temp.corre($q$
+    insert into ctx select 'versao1', v.id from betonagens.emitir_fcq(
+      (select valor from ctx where chave='fcq1'), 1,
+      (select valor from ctx where chave='pdf1'),
+      sha256(convert_to('pdf-da-fcq-1-v1','UTF8')),
+      jsonb_build_object('n_obra','2602','numero','033 / 001')) v
+  $q$, 'FQ16 · ficha do PAB 1 emitida');
+
+  -- A N14a deixou um item de armaduras em NC, sem reinspeção. O documento sai
+  -- na mesma — o impresso é o registo do que aconteceu — mas sai a dizê-lo.
+  r := r || pg_temp.vale($q$
+    select v.conformidade::text from betonagens.fcq_versao v
+     where v.id = (select valor from ctx where chave='versao1') $q$,
+    'NAO_CONFORME', 'FQ17 · uma NC por resolver torna a ficha não conforme');
+
+  r := r || pg_temp.vale($q$
+    select (v.dados ->> 'numero') from betonagens.fcq_versao v
+     where v.id = (select valor from ctx where chave='versao1') $q$,
+    '033 / 001', 'FQ18 · o que foi impresso fica guardado com a versão');
+
+  -- R7 · depois de emitida, a ficha é read-only. Já era verdade antes desta
+  -- migração; o que muda é que agora existe quem a ponha em EMITIDA.
+  r := r || pg_temp.atira($q$
+    select betonagens.marcar_item_fcq(
+      gen_random_uuid(), (select valor from ctx where chave='fcq1'), 'L01',
+      'reinsp1', 'C', now() - interval '5 minutes', 'DISP-FISCAL-0001', 1700)
+  $q$, 'PT409', 'FQ19 · emitida a ficha, não entram mais critérios');
+
+  r := r || pg_temp.vale($q$
+    select count(*)::text from betonagens.evento_saida e
+     where e.tipo = 'FCQ_EMITIDA'
+       and e.agregado_id = (select valor from ctx where chave='fcq1') $q$,
+    '1', 'FQ20 · a emissão sai como evento para quem integrar');
+
+  -- ══════════════════════════════════════════════════════════════════════════
   -- RLS · isolamento por obra ao nível da base de dados
   -- ══════════════════════════════════════════════════════════════════════════
 

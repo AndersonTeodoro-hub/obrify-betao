@@ -823,14 +823,15 @@ export async function lerGuiasDaObra(obraId: string): Promise<Guia[]> {
 }
 
 /**
- * Um endereço temporário para ver a fotografia de uma guia.
+ * Um endereço temporário para abrir um ficheiro registado — a fotografia de uma
+ * guia ou o PDF de uma FCQ.
  *
- * O balde é privado e não tem política de escrita nenhuma — a única porta de
- * entrada é a Edge Function. Para ler, a política da 0018 deixa passar quem vê
- * a obra, e é sobre ela que este endereço assinado é emitido. Dura um minuto:
- * é para abrir, não para partilhar.
+ * Os baldes são privados e não têm política de escrita nenhuma — a única porta
+ * de entrada são as Edge Functions. Para ler, as políticas da 0018 e da 0023
+ * deixam passar quem vê a obra, e é sobre elas que este endereço assinado é
+ * emitido. Dura um minuto: é para abrir, não para partilhar.
  */
-export async function enderecoDaFoto(ficheiroId: string): Promise<string> {
+export async function enderecoDoFicheiro(ficheiroId: string): Promise<string> {
   const { data, error } = await betonagens()
     .from('ficheiro')
     .select('caminho_storage')
@@ -1077,4 +1078,103 @@ export async function aprovarPab(pabId: string): Promise<EstadoPab> {
     )
   }
   return estado
+}
+
+// ── emissão da FCQ ──────────────────────────────────────────────────────────
+
+export type VersaoFcq = {
+  id: string
+  versao: number
+  conformidade: 'CONFORME' | 'CONFORME_COM_OBS' | 'NAO_CONFORME'
+  ficheiro_pdf_id: string
+  /** Relógio do servidor. */
+  emitida_em: string
+  emitida_por: string
+  motivo_reemissao: string | null
+}
+
+/**
+ * As versões emitidas de uma ficha, da mais recente para a mais antiga.
+ *
+ * O nome de quem emitiu não vem daqui: vem de lerUtilizadores(), que o ecrã já
+ * carrega. Duas leituras pequenas em vez de um embed com desambiguação de
+ * chave estrangeira — a fcq_versao tem duas colunas a apontar para utilizador
+ * (emitida_por e autorizada_por) e um embed sem sugestão de qual delas é um
+ * erro à espera do primeiro pedido em produção.
+ */
+export async function lerVersoesFcq(fcqId: string): Promise<VersaoFcq[]> {
+  const { data, error } = await betonagens()
+    .from('fcq_versao')
+    .select('id, versao, conformidade, ficheiro_pdf_id, emitida_em, emitida_por, motivo_reemissao')
+    .eq('fcq_id', fcqId)
+    .order('versao', { ascending: false })
+  if (error) throw error
+  return (data ?? []) as VersaoFcq[]
+}
+
+export type FcqGerada = {
+  versaoId: string
+  versao: number
+  conformidade: string
+  ficheiroId: string
+  sha256: string
+  impresso: string
+  avisos: string[]
+}
+
+/**
+ * Gera a FCQ: o impresso oficial preenchido, guardado e registado como versão.
+ *
+ * Não passa pelo PostgREST porque não é uma escrita de domínio — é a produção
+ * de um documento. A Edge Function carrega o impresso do balde, confere-lhe o
+ * sha256 contra o que a 0010 registou, desenha por cima pelo mapa de campos, e
+ * só depois regista o ficheiro e a versão. Se o impresso divergir do hash, não
+ * gera nada e diz porquê.
+ *
+ * `motivo` só é preciso a partir da segunda versão — é a D4, e é o servidor que
+ * a exige.
+ */
+export async function gerarFcq(fcqId: string, motivo: string | null): Promise<FcqGerada> {
+  const resposta = await fetch(`${urlDasFuncoes}/gerar-fcq`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${await tokenDaSessao()}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ fcq_id: fcqId, motivo_reemissao: motivo }),
+  })
+
+  const texto = await resposta.text()
+  if (!resposta.ok) {
+    let corpo: unknown = texto
+    try {
+      corpo = JSON.parse(texto)
+    } catch {
+      /* não era JSON: fica o texto */
+    }
+    throw new Error(mensagemDeErro(corpo))
+  }
+
+  const corpo = JSON.parse(texto) as {
+    versao_id?: string
+    versao?: number
+    conformidade?: string
+    ficheiro_id?: string
+    sha256?: string
+    impresso?: string
+    avisos?: string[]
+  }
+  if (typeof corpo.versao_id !== 'string' || typeof corpo.ficheiro_id !== 'string') {
+    throw new Error(`A geração não devolveu a versão emitida. Veio: ${texto}`)
+  }
+
+  return {
+    versaoId: corpo.versao_id,
+    versao: Number(corpo.versao ?? 0),
+    conformidade: String(corpo.conformidade ?? ''),
+    ficheiroId: corpo.ficheiro_id,
+    sha256: String(corpo.sha256 ?? ''),
+    impresso: String(corpo.impresso ?? ''),
+    avisos: corpo.avisos ?? [],
+  }
 }

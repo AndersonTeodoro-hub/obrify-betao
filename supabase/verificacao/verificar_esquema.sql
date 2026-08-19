@@ -98,7 +98,8 @@ migracao_esperada(ficheiro, ordem) as (values
   ('0019_gravar_guia_ordem.sql',           19),
   ('0020_acessos.sql',                     20),
   ('0021_impressos_e_origem_gerado.sql',   21),
-  ('0022_leitura_guia.sql',                22)
+  ('0022_leitura_guia.sql',                22),
+  ('0023_emissao_fcq.sql',                 23)
 ),
 -- O que TEM de estar concedido. Sem estas listas o verificador só sabe ver
 -- privilégios a mais e é cego a revogações: uma retirada silenciosa só se
@@ -116,6 +117,7 @@ funcao_de_servico(proname) as (values
   ('atualizar_obra'),('gerar_codigo_registo'),('revogar_codigo_registo'),
   ('registar_com_codigo'),
   ('corrigir_guia'),('corrigir_item_fcq'),('criar_central'),('criar_frente'),
+  ('emitir_fcq'),
   ('criar_obra'),('definir_parametro'),('desativar_utilizador'),
   ('fechar_betonagem'),('marcar_item_fcq'),('registar_ficheiro'),
   ('registar_guia'),('registar_leitura_guia'),('registar_utilizador'),
@@ -262,7 +264,7 @@ v(verificacao, ok, detalhe) as (
                           <> (p.proname in (select f.proname from funcao_de_servico f)
                            or p.proname in (select f.proname from funcao_auxiliar_rls f)
                            or p.proname in (select f.proname from funcao_utilitaria f))),
-                  '25 de serviço + 4 auxiliares + 1 utilitária')
+                  '26 de serviço + 4 auxiliares + 1 utilitária')
 
   union all
   select 'service_role executa exactamente o que as Edge Functions chamam',

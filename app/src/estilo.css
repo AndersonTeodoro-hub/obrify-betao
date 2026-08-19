@@ -758,6 +758,30 @@ button.linha-doc[aria-current='true']:hover { background: var(--ddn-claro); }
 .conf-COM_ALERTA  { background: var(--hivis-claro); color: #6B4B00; }
 .conf-NAO_CONFORME{ background: var(--ferro-claro); color: var(--ferro); }
 
+/* ── emissão da FCQ ───────────────────────────────────────────────────────── */
+/* O impresso oficial preenchido. Reaproveita a linha do documento das guias:
+   é a mesma ideia — um registo por linha, com o estado do lado direito. */
+.emissao-fcq { border-top: 1px solid var(--linha); }
+.versoes-fcq { border-top: 1px solid var(--linha); }
+.linha-versao { border-bottom: 1px solid #EDEBE7; }
+.linha-versao:last-child { border-bottom: 0; }
+.linha-versao .anotacao-registada { grid-column: 1 / -1; margin-top: 0.4rem; }
+
+.forma-reemissao { padding: 0.6rem 0.85rem 0.85rem; background: var(--hivis-claro); }
+.forma-reemissao input { margin-bottom: 0.5rem; }
+.forma-reemissao .btn { margin-top: 0.4rem; }
+
+.estado-fcq {
+  margin: 0;
+  padding: 0.7rem 0.85rem;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  color: var(--tinta-2);
+  background: #F3F1EC;
+}
+.estado-fcq.fcq-ok { color: var(--ddn-esc); background: var(--ddn-claro); }
+
 /* ── proveniência dos valores ─────────────────────────────────────────────── */
 /* De onde veio cada campo: lido pelo modelo, corrigido por cima do lido, ou
    escrito à mão. Discreto no formulário, à vista na lista do fiscal — é lá que

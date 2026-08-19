@@ -31,8 +31,9 @@ import {
   assinarSeccao,
   carregarFotoGuia,
   criarCentral,
-  enderecoDaFoto,
+  enderecoDoFicheiro,
   fecharBetonagem,
+  gerarFcq,
   lerCentrais,
   lerEstadoSeccoes,
   lerFicha,
@@ -41,6 +42,8 @@ import {
   lerGuias,
   lerItensInspecao,
   lerLinhasPreBetonagem,
+  lerUtilizadores,
+  lerVersoesFcq,
   marcarItem,
   mensagemDeErro,
   NOME_DA_SECCAO,
@@ -61,6 +64,7 @@ import {
   type Pab,
   type SeccaoFcq,
   type ValorFcq,
+  type VersaoFcq,
 } from './dominio'
 import { lerNumero } from './campos'
 import type { UtilizadorDeDominio } from './sessao'
@@ -73,6 +77,15 @@ const PERFIS_DE_INSPECAO = ['FISCALIZACAO', 'DIRETOR_QUALIDADE']
 /** O mínimo que a anotação de uma não conformidade tem de ter, do lado do
  *  servidor: constraint fcq_item_nc_anotado e verificação na função. */
 const MINIMO_ANOTACAO = 5
+
+/** D4 · o mínimo do motivo de reemissão, do lado do servidor: constraint
+ *  fcq_versao_reemissao_justificada e verificação em emitir_fcq. */
+const MINIMO_MOTIVO = 20
+
+/** Os estados em que a FCQ se emite. A ficha é o último acto: sai com a
+ *  betonagem fechada, que é também o único caminho por onde o PAB pode chegar a
+ *  FCQ_FECHADA (constraint pab_estado_exige_fecho, da 0003). */
+const COM_EMISSAO: EstadoPab[] = ['BETONADO', 'FCQ_FECHADA']
 
 const VALORES: ValorFcq[] = ['C', 'NC', 'NA']
 const SIMBOLO: Record<ValorFcq, string> = { C: '√', NC: '✕', NA: '∕' }
@@ -94,18 +107,25 @@ type Dados = {
   frente: string | null
   guias: Guia[]
   centrais: Central[]
+  versoes: VersaoFcq[]
+  /** Para dar nome a quem emitiu cada versão. Duas leituras pequenas em vez de
+   *  um embed com desambiguação de chave estrangeira. */
+  nomes: Map<string, string>
 }
 
 async function carregar(pab: Pab, obraId: string): Promise<Dados> {
   const ficha = await lerFicha(pab.id)
-  const [linhas, itens, estados, frentes, guias, centrais] = await Promise.all([
-    lerLinhasPreBetonagem(ficha.modelo_impresso_id),
-    lerItensInspecao(ficha.id),
-    lerEstadoSeccoes(ficha.id),
-    lerFrentes(obraId),
-    lerGuias(pab.id),
-    lerCentrais(),
-  ])
+  const [linhas, itens, estados, frentes, guias, centrais, versoes, utilizadores] =
+    await Promise.all([
+      lerLinhasPreBetonagem(ficha.modelo_impresso_id),
+      lerItensInspecao(ficha.id),
+      lerEstadoSeccoes(ficha.id),
+      lerFrentes(obraId),
+      lerGuias(pab.id),
+      lerCentrais(),
+      lerVersoesFcq(ficha.id),
+      lerUtilizadores(),
+    ])
   return {
     ficha,
     linhas,
@@ -114,6 +134,8 @@ async function carregar(pab: Pab, obraId: string): Promise<Dados> {
     frente: frentes.find((f) => f.id === pab.frente_id)?.designacao ?? null,
     guias,
     centrais,
+    versoes,
+    nomes: new Map(utilizadores.map((u) => [u.id, u.nome])),
   }
 }
 
@@ -344,6 +366,75 @@ function desenharGuias(destino: HTMLElement, dados: Dados, aoVerFoto: (g: Guia) 
   }
 }
 
+/**
+ * As versões emitidas da ficha, da mais recente para a mais antiga.
+ *
+ * Uma reemissão não apaga a anterior: fica a lista, com data, autor e motivo.
+ * É o que torna a D4 legível a quem não sabe o que é a D4.
+ */
+function desenharVersoes(
+  destino: HTMLElement,
+  dados: Dados,
+  aoAbrir: (v: VersaoFcq) => void,
+): void {
+  destino.replaceChildren()
+
+  if (dados.versoes.length === 0) {
+    const vazio = document.createElement('p')
+    vazio.className = 'vazio'
+    vazio.textContent = 'A ficha ainda não foi emitida.'
+    destino.append(vazio)
+    return
+  }
+
+  for (const versao of dados.versoes) {
+    const numero = document.createElement('span')
+    numero.className = 'mono ref-doc'
+    numero.textContent = `v${versao.versao}`
+
+    const corpo = document.createElement('span')
+    corpo.className = 'corpo-doc'
+
+    const titulo = document.createElement('span')
+    titulo.className = 'titulo-doc'
+    titulo.textContent = horaLocal(versao.emitida_em) ?? '—'
+
+    const sub = document.createElement('span')
+    sub.className = 'sub-doc'
+    sub.textContent = dados.nomes.get(versao.emitida_por) ?? 'autor desconhecido'
+
+    corpo.append(titulo, sub)
+
+    const lado = document.createElement('span')
+    lado.className = 'lado-doc'
+
+    const conf = document.createElement('span')
+    conf.className = `estado conf-${versao.conformidade}`
+    conf.textContent = versao.conformidade.replace(/_/g, ' ')
+
+    const abrir = document.createElement('button')
+    abrir.type = 'button'
+    abrir.className = 'btn-foto'
+    abrir.textContent = 'Abrir'
+    abrir.addEventListener('click', () => aoAbrir(versao))
+
+    lado.append(conf, abrir)
+
+    const linha = document.createElement('div')
+    linha.className = 'linha-doc linha-versao'
+    linha.append(numero, corpo, lado)
+
+    if (versao.motivo_reemissao !== null) {
+      const motivo = document.createElement('div')
+      motivo.className = 'anotacao-registada'
+      motivo.textContent = `Reemissão: ${versao.motivo_reemissao}`
+      linha.append(motivo)
+    }
+
+    destino.append(linha)
+  }
+}
+
 function desenharCabecalhoSeccao(
   seccao: SeccaoFcq,
   estado: EstadoSeccao | undefined,
@@ -548,6 +639,24 @@ export function montarEcraFicha(
           </p>
           ${podeInspecionar ? '' : `<p class="nota-perfil">O perfil ${utilizador.perfil} não preenche a ficha.</p>`}
           <div id="seccoes"><p class="vazio">A carregar…</p></div>
+
+          <!-- A emissão é o último acto: o impresso oficial preenchido, guardado
+               e registado como versão. Só aparece quando a betonagem está
+               fechada — antes disso o documento saía a meio. -->
+          <div id="emissao-fcq" class="emissao-fcq" hidden>
+            <div class="doc-accao">
+              <button id="botao-gerar-fcq" class="btn btn-p" type="button" hidden>Gerar FCQ</button>
+              <button id="botao-abrir-fcq" class="btn btn-s" type="button" hidden>FCQ (PDF)</button>
+            </div>
+            <form id="forma-reemissao" class="forma-reemissao" hidden>
+              <label for="motivo-reemissao">Motivo da reemissão</label>
+              <input id="motivo-reemissao" name="motivo-reemissao" type="text" autocomplete="off"
+                     placeholder="Reinspeção da cofragem depois de corrigido o escoramento">
+              <button id="botao-reemitir" class="btn btn-p" type="submit">Reemitir FCQ</button>
+            </form>
+            <p id="estado-fcq" class="estado-fcq" hidden></p>
+            <div id="versoes-fcq" class="versoes-fcq"></div>
+          </div>
         </section>
 
         <section class="doc-bloco" id="bloco-rececao" hidden>
@@ -869,7 +978,26 @@ export function montarEcraFicha(
 
   botaoFechar.addEventListener('click', () => {
     executar(
-      () => fecharBetonagem(pab.id),
+      async () => {
+        const estado = await fecharBetonagem(pab.id)
+        // A FCQ é o último acto: com a betonagem fechada, o documento sai
+        // sozinho. Quem fecha pode ser o empreiteiro, e esse não emite — nesse
+        // caso fica o botão para a fiscalização.
+        const id = fichaId
+        if (podeInspecionar && id !== null) {
+          try {
+            await gerarFcq(id, null)
+          } catch (causa) {
+            // Não é um catch silencioso: volta a subir com o que aconteceu
+            // antes, senão a frase do erro faria parecer que o fecho falhou.
+            throw new Error(
+              `A betonagem ficou fechada, mas a FCQ não saiu: ${mensagemDeErro(causa)}\n` +
+                'Use o botão Gerar FCQ quando o que impede estiver resolvido.',
+            )
+          }
+        }
+        return estado
+      },
       (estado) => {
         estadoPab = estado
         desenharEstado()
@@ -877,6 +1005,92 @@ export function montarEcraFicha(
       },
     )
   })
+
+  // ── emissão da FCQ ────────────────────────────────────────────────────────
+
+  const emissaoFcq = destino.querySelector<HTMLElement>('#emissao-fcq')!
+  const botaoGerarFcq = destino.querySelector<HTMLButtonElement>('#botao-gerar-fcq')!
+  const botaoAbrirFcq = destino.querySelector<HTMLButtonElement>('#botao-abrir-fcq')!
+  const formaReemissao = destino.querySelector<HTMLFormElement>('#forma-reemissao')!
+  const motivoReemissao = destino.querySelector<HTMLInputElement>('#motivo-reemissao')!
+  const estadoFcq = destino.querySelector<HTMLParagraphElement>('#estado-fcq')!
+  const versoesFcq = destino.querySelector<HTMLElement>('#versoes-fcq')!
+
+  /** O último ficheiro emitido, para o botão de abrir. */
+  let ultimaVersao: VersaoFcq | null = null
+
+  const dizerFcq = (texto: string | null, classe = ''): void => {
+    estadoFcq.textContent = texto ?? ''
+    estadoFcq.className = `estado-fcq ${classe}`.trimEnd()
+    estadoFcq.hidden = texto === null
+  }
+
+  const emitir = (motivo: string | null): void => {
+    const id = fichaId
+    if (id === null) return
+    executar(
+      async () => {
+        dizerFcq('A preencher o impresso oficial…')
+        return await gerarFcq(id, motivo)
+      },
+      (gerada) => {
+        formaReemissao.hidden = true
+        motivoReemissao.value = ''
+        dizerFcq(
+          `FCQ v${gerada.versao} emitida sobre o ${gerada.impresso} · ${gerada.conformidade.replace(/_/g, ' ')}` +
+            (gerada.avisos.length === 0
+              ? ''
+              : `\nAvisos: ${gerada.avisos.join(' · ')}`),
+          'fcq-ok',
+        )
+        recarregar()
+      },
+    )
+  }
+
+  botaoGerarFcq.addEventListener('click', () => {
+    // A partir da segunda versão a D4 exige motivo escrito. Pedi-lo aqui evita
+    // uma viagem que o servidor ia recusar — e a recusa dele continua a valer.
+    if (ultimaVersao !== null) {
+      formaReemissao.hidden = false
+      motivoReemissao.focus()
+      return
+    }
+    emitir(null)
+  })
+
+  formaReemissao.addEventListener('submit', (evento) => {
+    evento.preventDefault()
+    const motivo = motivoReemissao.value.trim()
+    if (motivo.length < MINIMO_MOTIVO) {
+      mostrarErro(
+        `Reemitir substitui um documento que já saiu. O motivo precisa de pelo menos ${MINIMO_MOTIVO} caracteres.`,
+      )
+      motivoReemissao.focus()
+      return
+    }
+    emitir(motivo)
+  })
+
+  botaoAbrirFcq.addEventListener('click', () => {
+    const versao = ultimaVersao
+    if (versao === null) return
+    erro.hidden = true
+    enderecoDoFicheiro(versao.ficheiro_pdf_id)
+      .then((endereco) => {
+        window.open(endereco, '_blank', 'noopener')
+      })
+      .catch(mostrarErro)
+  })
+
+  const abrirVersao = (versao: VersaoFcq): void => {
+    erro.hidden = true
+    enderecoDoFicheiro(versao.ficheiro_pdf_id)
+      .then((endereco) => {
+        window.open(endereco, '_blank', 'noopener')
+      })
+      .catch(mostrarErro)
+  }
 
   // ── receção do betão ──────────────────────────────────────────────────────
 
@@ -1182,7 +1396,7 @@ export function montarEcraFicha(
 
   const verFoto = (guia: Guia): void => {
     erro.hidden = true
-    enderecoDaFoto(guia.ficheiro_id)
+    enderecoDoFicheiro(guia.ficheiro_id)
       .then((endereco) => {
         // noopener: a página aberta não fica com referência para esta.
         window.open(endereco, '_blank', 'noopener')
@@ -1296,6 +1510,20 @@ export function montarEcraFicha(
     )
 
     desenharGuias(listaGuias, dados, verFoto)
+
+    // ── emissão da FCQ ──────────────────────────────────────────────────────
+    ultimaVersao = dados.versoes[0] ?? null
+    const emitivel = COM_EMISSAO.includes(estadoPab)
+    // O bloco só existe quando há alguma coisa para ver ou para fazer: antes da
+    // betonagem fechada e sem versões, um botão inerte não explicaria nada.
+    emissaoFcq.hidden = !emitivel && dados.versoes.length === 0
+    botaoGerarFcq.hidden = !podeInspecionar || !emitivel
+    botaoGerarFcq.textContent = ultimaVersao === null ? 'Gerar FCQ' : 'Reemitir FCQ'
+    botaoAbrirFcq.hidden = ultimaVersao === null
+    if (ultimaVersao !== null) botaoAbrirFcq.textContent = `FCQ (PDF) · v${ultimaVersao.versao}`
+    if (ultimaVersao === null) formaReemissao.hidden = true
+
+    desenharVersoes(versoesFcq, dados, abrirVersao)
 
     preencherCentrais(selectCentral, dados.centrais)
 
