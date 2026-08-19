@@ -85,31 +85,51 @@ $h$;
 
 -- Igual ao anterior, mas com o papel authenticated e um JWT concreto: é a
 -- única forma de observar a RLS, que não se aplica ao dono das tabelas.
+--
+-- ── ESTAS DUAS EMPRESTAM A IDENTIDADE; NÃO A SUBSTITUEM ─────────────────────
+-- O `reset role` do fim repõe o PAPEL, mas o JWT ficava com o último p_sub até
+-- alguém o voltar a pôr à mão. Metade do trabalho — e a metade que fica é
+-- invisível: o teste a seguir não falha por causa dela, falha um teste de
+-- escrita muito mais abaixo, com um PT403 a dizer o nome de outra pessoa.
+-- Foi exactamente o que aconteceu ao bloco LG: uma linha a observar a RLS pelos
+-- olhos do empreiteiro da outra obra deixou-o a escrever nesta.
+-- Por isso guardam o que estava e repõem-no. '' é o que estas definições valem
+-- quando ninguém as pôs: identidade_externa() faz nullif sobre ambas.
 create or replace function pg_temp.vale_como(p_sql text, p_esperado text, p_nome text, p_sub uuid)
 returns text language plpgsql as $h$
-declare v text;
+declare v text; v_res text; v_claims text; v_sub text;
 begin
+  v_claims := coalesce(current_setting('request.jwt.claims', true), '');
+  v_sub    := coalesce(current_setting('request.jwt.claim.sub', true), '');
+
   perform set_config('request.jwt.claims', json_build_object('sub', p_sub)::text, true);
   perform set_config('request.jwt.claim.sub', p_sub::text, true);
   execute 'set local role authenticated';
   begin
     execute p_sql into v;
+    if v is not distinct from p_esperado then
+      v_res := format('ok      %s', p_nome);
+    else
+      v_res := format('NAO OK  %s  ->  esperava [%s], obteve [%s]',
+                      p_nome, p_esperado, coalesce(v, 'NULO'));
+    end if;
   exception when others then
-    execute 'reset role';
-    return format('NAO OK  %s  ->  %s: %s', p_nome, sqlstate, sqlerrm);
+    v_res := format('NAO OK  %s  ->  %s: %s', p_nome, sqlstate, sqlerrm);
   end;
   execute 'reset role';
-  if v is not distinct from p_esperado then
-    return format('ok      %s', p_nome);
-  end if;
-  return format('NAO OK  %s  ->  esperava [%s], obteve [%s]', p_nome, p_esperado, coalesce(v, 'NULO'));
+  perform set_config('request.jwt.claims', v_claims, true);
+  perform set_config('request.jwt.claim.sub', v_sub, true);
+  return v_res;
 end
 $h$;
 
 create or replace function pg_temp.atira_como(p_sql text, p_codigo text, p_nome text, p_sub uuid)
 returns text language plpgsql as $h$
-declare v_res text;
+declare v_res text; v_claims text; v_sub text;
 begin
+  v_claims := coalesce(current_setting('request.jwt.claims', true), '');
+  v_sub    := coalesce(current_setting('request.jwt.claim.sub', true), '');
+
   perform set_config('request.jwt.claims', json_build_object('sub', p_sub)::text, true);
   perform set_config('request.jwt.claim.sub', p_sub::text, true);
   execute 'set local role authenticated';
@@ -124,6 +144,8 @@ begin
     end if;
   end;
   execute 'reset role';
+  perform set_config('request.jwt.claims', v_claims, true);
+  perform set_config('request.jwt.claim.sub', v_sub, true);
   return v_res;
 end
 $h$;
@@ -1165,6 +1187,19 @@ begin
     select count(*)::text from betonagens.leitura_guia $q$,
     '0', 'LG04 · empreiteiro de outra obra não vê leitura nenhuma', k_empr2);
 
+  -- O travão do defeito que este bloco custou: observar a RLS pelos olhos de
+  -- outra pessoa não pode deixar essa pessoa a escrever no lugar de quem estava.
+  -- Sem esta linha, a fuga volta e só se manifesta cinco testes abaixo, com um
+  -- PT403 a dizer um nome que ninguém pôs ali.
+  -- Lê a definição de sessão em vez de chamar identidade_externa(): é a
+  -- definição que fugia, e é a única coisa da suite inteira que precisaria de
+  -- EXECUTE em betonagens_priv. Um teste que falhasse por privilégio diria
+  -- exactamente nada sobre o que veio verificar.
+  r := r || pg_temp.vale($q$
+    select u.nome from betonagens.utilizador u
+     where u.auth_user_id = nullif(current_setting('request.jwt.claim.sub', true), '')::uuid $q$,
+    'Manuel Ferreira', 'LG04b · observar a RLS não troca quem escreve a seguir');
+
   -- A recusa estrutural: a proveniência tem de vir da fotografia que se está a
   -- registar. Sem isto, bastava apontar para a leitura de uma guia conforme.
   r := r || pg_temp.corre($q$
@@ -1298,8 +1333,11 @@ begin
        and a.guia_id = (select valor from ctx where chave='guia_classe') $q$,
     'true', 'LG13 · o alerta conta a história certa: a divergência veio da leitura');
 
+  -- jsonb_exists() e não o operador ?: a suite é colada num editor, e um ponto
+  -- de interrogação em SQL cru é um sítio onde clientes se enganam a fingir que
+  -- é um parâmetro. A função faz exactamente o mesmo sem essa hipótese.
   r := r || pg_temp.vale($q$
-    select (g.proveniencia ? 'data')::text from betonagens.guia_remessa g
+    select jsonb_exists(g.proveniencia, 'data')::text from betonagens.guia_remessa g
      where g.id = (select valor from ctx where chave='guia_classe') $q$,
     'false', 'LG14 · campo que o modelo não leu não entra na proveniência');
 
